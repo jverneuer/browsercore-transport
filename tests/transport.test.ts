@@ -332,7 +332,7 @@ describe("remote lifecycle — error and half-close drive state", () => {
             // via white-box access — this is the deterministic trigger for a path
             // that a remote destroy cannot reliably reproduce (destroying the
             // server-side socket yields a clean FIN → hadError=false on the client).
-            const socket = (transport as unknown as { _socket: Socket })._socket;
+            const socket = (transport as unknown as { socket: Socket }).socket;
             socket.emit("error", new Error("simulated client socket error"));
 
             // The error handler runs synchronously on emit(), but give the

@@ -31,6 +31,25 @@ describe("resolveHost", () => {
         );
     });
 
+    it("falls back to the requested family when the lookup reports none (B78)", async () => {
+        // Some lookup implementations call back with resolvedFamily=0/null/undefined
+        // when they cannot determine the family. The `resolvedFamily ?? family`
+        // fallback (resolveHost ~line 437) must then use the family we requested
+        // rather than propagating a falsy value into ResolvedAddress.family.
+        const fakeLookup = (
+            _host: string,
+            _opts: { family: 4 | 6 },
+            cb: (err: Error | null, address: string, family: number) => void,
+        ): void => {
+            cb(null, "192.0.2.5", 0);
+        };
+
+        const result = await resolveHost("example.com", false, fakeLookup);
+
+        expect(result.address).toBe("192.0.2.5");
+        expect(result.family).toBe(4);
+    });
+
     it("passes IPv6 family when requested", async () => {
         let capturedFamily = 0;
         const fakeLookup = (
