@@ -1,5 +1,5 @@
 /**
- * @network/transport — public API surface.
+ * @browsercore/transport — public API surface.
  *
  * A generic byte-stream transport abstraction independent of TLS or HTTP.
  * Higher layers (tls, http1, http2) compose exclusively through these exports.

@@ -1,5 +1,5 @@
 /**
- * Typed errors for @network/transport.
+ * Typed errors for @browsercore/transport.
  *
  * Errors are part of the API — every failure mode is an explicit type so callers
  * can match on `kind` instead of parsing messages.

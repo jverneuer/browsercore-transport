@@ -1,5 +1,5 @@
 {
-  "name": "@network/transport",
+  "name": "@browsercore/transport",
   "version": "0.1.0",
   "description": "Generic byte-stream transport abstraction (TCP sockets, DNS, backpressure). No knowledge of TLS or HTTP.",
   "license": "MIT",

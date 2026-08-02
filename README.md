@@ -1,4 +1,4 @@
-# @network/transport
+# @browsercore/transport
 
 A generic byte-stream transport abstraction independent of TLS or HTTP.
 
@@ -17,7 +17,7 @@ read/write buffering, backpressure, timeouts, DNS resolution, and IPv4/IPv6.
 ## Public API
 
 ```ts
-import { connect, resolveHost, TransportError } from "@network/transport";
+import { connect, resolveHost, TransportError } from "@browsercore/transport";
 
 const transport = await connect({
     host: "example.com",
@@ -49,8 +49,8 @@ await transport.close();
 ## Dependency graph
 
 ```
-@network/transport
+@browsercore/transport
   └─ node:net / node:dns / node:crypto
 ```
 
-No other `@network/*` packages are imported.
+No other `@browsercore/*` packages are imported.

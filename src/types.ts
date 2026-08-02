@@ -1,5 +1,5 @@
 /**
- * Domain types for @network/transport.
+ * Domain types for @browsercore/transport.
  *
  * This package owns NO knowledge of TLS, HTTP, or browser fingerprints.
  * It is a pure byte-stream abstraction over a reliable ordered transport (TCP).

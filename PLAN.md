@@ -1,4 +1,4 @@
-# @network/transport — Implementation Plan
+# @browsercore/transport — Implementation Plan
 
 This package is the foundation everything else builds on. Implement in this order;
 each step is independently testable.
