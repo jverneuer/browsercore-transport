@@ -2,59 +2,32 @@
  * Transport: a reliable, ordered byte stream over TCP.
  *
  * No knowledge of TLS, HTTP, or browser fingerprints. Higher layers compose on top.
+ * The stateful lifecycle lives in `TcpTransport`; timer and backpressure concerns
+ * are composed in from dedicated modules so each file stays focused.
  */
 
 import { connect as netConnect, type Socket } from "node:net";
-import { lookup as dnsLookup } from "node:dns";
 import { EventEmitter } from "node:events";
 import type {
     CloseReason,
-    DnsLookupFn,
-    ResolvedAddress,
+    Deferred,
+    DrainQueue,
+    Transport,
     TransportId,
     TransportOptions,
     TransportState,
+    TransportTimers,
 } from "./types.js";
-import {
-    ConnectTimeoutError,
-    DnsResolutionError,
-    IdleTimeoutError,
-    ReadTimeoutError,
-    TransportError,
-} from "./errors.js";
+import { ConnectTimeoutError, TransportError, ensureTransportError } from "./errors.js";
 import { assertNever } from "./utils.js";
+import { createDeferred } from "./deferred.js";
+import { createDrainQueue } from "./drain.js";
+import { createTransportTimers } from "./timers.js";
+import { resolveHost } from "./resolve.js";
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 const DEFAULT_IPV6 = true;
 const DEFAULT_NO_DELAY = true;
-
-/** The public interface every transport implements. Higher layers depend on this. */
-export interface Transport extends EventEmitter {
-    /** Opaque identifier for logging / correlation. */
-    readonly id: TransportId;
-    /** Current lifecycle state. */
-    readonly state: TransportState;
-
-    /**
-     * Write bytes to the stream. Resolves when the data has been handed to the
-     * kernel (or buffered). Rejects if the transport is not open.
-     * Backpressure: the promise may take time to resolve under heavy write load.
-     */
-    write(data: Uint8Array): Promise<void>;
-
-    /**
-     * Read available data. Resolves with the next chunk of bytes, or rejects if
-     * the transport closes before any data arrives. For a streaming read API,
-     * subscribe to the `"data"` event instead.
-     */
-    read(): Promise<Uint8Array>;
-
-    /**
-     * Gracefully close the transport. Resolves once the socket has closed.
-     * `reason` is recorded for observability.
-     */
-    close(reason?: CloseReason): Promise<void>;
-}
 
 // Re-export so the barrel (index.ts) can surface the concrete class name once implemented.
 export type { Socket };
@@ -62,24 +35,15 @@ export type { Socket };
 /** Concrete transport implementation over node:net.Socket. */
 export class TcpTransport extends EventEmitter implements Transport {
     public readonly id: TransportId;
+    // `_state` is the one exception to the no-underscore rule: the public
+    // `get state()` getter (required by the Transport interface) already
+    // claims the name `state`, so the backing field keeps a trailing marker.
     private _state: TransportState = { state: "connecting" };
-    private _socket: Socket | undefined;
-    private _connectTimeoutMs: number | undefined;
-    private _idleTimeoutMs: number | undefined;
-    private _readTimeoutMs: number | undefined;
-    private _idleTimer: NodeJS.Timeout | undefined;
-    private _readTimer: NodeJS.Timeout | undefined;
-    private _readBuffer: Uint8Array[] = [];
-    private _pendingRead: ((data: Uint8Array) => void) | undefined;
-    private _pendingReadReject: ((err: Error) => void) | undefined;
-    /**
-     * Serialized chain of backpressure waiters. Each `write()` that observes a
-     * full kernel buffer appends a promise here; the `"drain"` handler releases
-     * them one at a time in FIFO order so concurrent writes queue behind drain.
-     */
-    private _drainChain: Promise<void> = Promise.resolve();
-    /** The single drain waiter currently registered on the socket (FIFO slot). */
-    private _drainWaiter: { resolve: () => void; reject: (e: Error) => void } | undefined;
+    private socket: Socket | undefined;
+    private readBuffer: Uint8Array[] = [];
+    private pendingRead: Deferred<Uint8Array> | undefined;
+    private timers!: TransportTimers;
+    private drain!: DrainQueue;
 
     /** Current lifecycle state (read-only through this getter). */
     public get state(): TransportState {
@@ -102,15 +66,26 @@ export class TcpTransport extends EventEmitter implements Transport {
 
     /** Resolve DNS, open the socket, and wire lifecycle events. */
     private async _establish(options: TransportOptions): Promise<void> {
-        this._connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
-        this._idleTimeoutMs = options.idleTimeoutMs;
-        this._readTimeoutMs = options.readTimeoutMs;
-
-        const lookup: DnsLookupFn = options.dnsLookup ?? dnsLookup;
+        const connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
         const ipv6 = options.ipv6 ?? DEFAULT_IPV6;
         const noDelay = options.noDelay ?? DEFAULT_NO_DELAY;
 
-        const resolved: ResolvedAddress = await resolveHost(options.host, ipv6, lookup);
+        const resolved = await resolveHost(options.host, ipv6, options.dnsLookup);
+
+        // Timers and the backpressure queue are created here (not the
+        // constructor) because their configuration derives from `options`.
+        this.timers = createTransportTimers({
+            idleTimeoutMs: options.idleTimeoutMs,
+            readTimeoutMs: options.readTimeoutMs,
+            onIdleTimeout: (err) => {
+                this.emit("error", err);
+                void this.close({ kind: "timeout", afterMs: err.idleMs });
+            },
+            onReadTimeout: (err) => {
+                this.rejectPendingRead(err);
+            },
+        });
+        this.drain = createDrainQueue();
 
         return new Promise<void>((resolve, reject) => {
             const socket = netConnect({
@@ -121,56 +96,43 @@ export class TcpTransport extends EventEmitter implements Transport {
                 family: resolved.family,
                 ...options.socketOptions,
             });
-            this._socket = socket;
+            this.socket = socket;
 
             const connectTimer = setTimeout(() => {
-                const err = new ConnectTimeoutError(
-                    options.host,
-                    options.port,
-                    this._connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
-                );
+                const err = new ConnectTimeoutError(options.host, options.port, connectTimeoutMs);
                 socket.destroy(err);
-                this._transition({
-                    state: "closed",
-                    reason: { kind: "timeout", afterMs: this._connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS },
-                });
+                this.transition({ state: "closed", reason: { kind: "timeout", afterMs: connectTimeoutMs } });
                 reject(err);
-            }, this._connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS);
+            }, connectTimeoutMs);
 
             socket.once("connect", () => {
                 clearTimeout(connectTimer);
-                this._transition({ state: "open" });
-                this._resetIdleTimer();
+                this.transition({ state: "open" });
+                this.timers.resetIdle();
                 resolve();
             });
 
             socket.on("data", (chunk: Buffer) => {
-                this._resetIdleTimer();
-                this._clearReadTimer();
+                this.timers.resetIdle();
+                this.timers.clearRead();
                 const data = new Uint8Array(chunk);
                 this.emit("data", data);
-                const pending = this._pendingRead;
+                const pending = this.pendingRead;
                 if (pending) {
-                    this._pendingRead = undefined;
-                    this._pendingReadReject = undefined;
-                    pending(data);
+                    this.pendingRead = undefined;
+                    pending.resolve(data);
                 } else {
-                    this._readBuffer.push(data);
+                    this.readBuffer.push(data);
                 }
             });
 
             socket.on("drain", () => {
-                // Kernel buffer drained: release the single queued write waiter.
-                const waiter = this._drainWaiter;
-                if (waiter) {
-                    this._drainWaiter = undefined;
-                    waiter.resolve();
-                }
+                this.drain.notifyDrain();
             });
 
             socket.on("end", () => {
                 this.emit("end");
-                this._rejectPendingRead(new TransportError("remote closed before read delivered"));
+                this.rejectPendingRead(new TransportError("remote closed before read delivered"));
             });
 
             socket.on("error", (err: Error) => {
@@ -181,27 +143,26 @@ export class TcpTransport extends EventEmitter implements Transport {
                 if (this.listenerCount("error") > 0) {
                     this.emit("error", err);
                 }
-                this._rejectPendingRead(err);
-                this._rejectDrainWaiter(err);
-                if (this._state.state !== "closed") {
-                    this._transition({ state: "closed", reason: { kind: "error", error: err } });
+                this.rejectPendingRead(err);
+                this.drain.reject(err);
+                if (this.state.state !== "closed") {
+                    this.transition({ state: "closed", reason: { kind: "error", error: err } });
                 }
             });
 
             socket.on("close", (hadError: boolean) => {
-                this._clearIdleTimer();
-                this._clearReadTimer();
+                this.timers.clearAll();
                 // Only auto-transition on *unexpected* closes (still open/connecting).
                 // A user-initiated close() drives the transition to "closed" itself.
-                if (this._state.state === "open" || this._state.state === "connecting") {
+                if (this.state.state === "open" || this.state.state === "connecting") {
                     const reason: CloseReason = hadError
                         ? { kind: "error", error: new TransportError("socket closed with error") }
                         : { kind: "remote_close" };
-                    this._transition({ state: "closed", reason });
+                    this.transition({ state: "closed", reason });
                 }
                 const closeErr = new TransportError("socket closed");
-                this._rejectPendingRead(closeErr);
-                this._rejectDrainWaiter(closeErr);
+                this.rejectPendingRead(closeErr);
+                this.drain.reject(closeErr);
                 this.emit("close", hadError);
             });
         });
@@ -215,8 +176,8 @@ export class TcpTransport extends EventEmitter implements Transport {
      * in userspace.
      */
     public write(data: Uint8Array): Promise<void> {
-        this._ensureOpen();
-        const socket = this._socket;
+        this.ensureOpen();
+        const socket = this.socket;
         if (!socket) {
             return Promise.reject(new TransportError("socket not available"));
         }
@@ -237,72 +198,61 @@ export class TcpTransport extends EventEmitter implements Transport {
                 }
             });
             // Kernel buffer full: backpressure. Resolution is deferred to the
-            // next "drain" event (handled in _releaseDrainWaiter). The flush
-            // callback above intentionally does nothing in this case.
+            // next "drain" event. The flush callback above intentionally does
+            // nothing in this case.
             if (!wroteOk) {
-                this._awaitDrain().then(
-                    () => {
-                        if (!settled) {
+                void this.drain
+                    .awaitDrain()
+                    .then(
+                        () => {
+                            if (settled) {
+                                return false;
+                            }
                             settled = true;
                             resolve();
-                        }
-                    },
-                    (e) => {
-                        if (!settled) {
+                            return true;
+                        },
+                        (e) => {
+                            if (settled) {
+                                return false;
+                            }
                             settled = true;
-                            reject(e);
-                        }
-                    },
-                );
+                            reject(ensureTransportError(e));
+                            return true;
+                        },
+                    );
             }
         });
     }
 
-    /**
-     * Resolve on the next `"drain"` event, queued behind any earlier backpressured
-     * writes so concurrent writers proceed one-at-a-time in FIFO order.
-     */
-    private _awaitDrain(): Promise<void> {
-        const next = this._drainChain.then(
-            () =>
-                new Promise<void>((resolve, reject) => {
-                    this._drainWaiter = { resolve, reject };
-                }),
-        );
-        // Keep the chain alive even if an individual waiter rejects/throws.
-        this._drainChain = next.catch(() => {});
-        return next;
-    }
-
     /** Read the next chunk of bytes, or reject if the socket closes / times out first. */
     public read(): Promise<Uint8Array> {
-        this._ensureOpen();
-        const buffered = this._readBuffer.shift();
+        this.ensureOpen();
+        const buffered = this.readBuffer.shift();
         if (buffered) {
             return Promise.resolve(buffered);
         }
-        return new Promise<Uint8Array>((resolve, reject) => {
-            this._pendingRead = resolve;
-            this._pendingReadReject = reject;
-            this._resetReadTimer();
-        });
+        const deferred = createDeferred<Uint8Array>();
+        this.pendingRead = deferred;
+        this.timers.resetRead();
+        return deferred.promise;
     }
 
     /** Gracefully close the transport. Resolves once the socket has closed. */
     public close(reason?: CloseReason): Promise<void> {
         const effectiveReason: CloseReason = reason ?? { kind: "client_close" };
-        if (this._state.state === "closed" || this._state.state === "closing") {
+        if (this.state.state === "closed" || this.state.state === "closing") {
             return Promise.resolve();
         }
-        this._transition({ state: "closing" });
-        const socket = this._socket;
+        this.transition({ state: "closing" });
+        const socket = this.socket;
         if (!socket || socket.destroyed) {
-            this._transition({ state: "closed", reason: effectiveReason });
+            this.transition({ state: "closed", reason: effectiveReason });
             return Promise.resolve();
         }
         return new Promise<void>((resolve) => {
             socket.once("close", () => {
-                this._transition({ state: "closed", reason: effectiveReason });
+                this.transition({ state: "closed", reason: effectiveReason });
                 resolve();
             });
             socket.end();
@@ -310,8 +260,8 @@ export class TcpTransport extends EventEmitter implements Transport {
     }
 
     /** Throw a typed error unless the transport is in the "open" state. */
-    private _ensureOpen(): void {
-        const s = this._state;
+    private ensureOpen(): void {
+        const s = this.state;
         switch (s.state) {
             case "open":
                 return;
@@ -327,115 +277,21 @@ export class TcpTransport extends EventEmitter implements Transport {
     }
 
     /** Transition to the next lifecycle state and emit it for observers. */
-    private _transition(next: TransportState): void {
+    private transition(next: TransportState): void {
         this._state = next;
         this.emit("state", next);
     }
 
     /** Reject a pending read if one exists (idempotent — clears the slot either way). */
-    private _rejectPendingRead(err: Error): void {
-        const rejecter = this._pendingReadReject;
-        if (rejecter) {
-            this._pendingRead = undefined;
-            this._pendingReadReject = undefined;
-            rejecter(err);
-        }
-    }
-
-    /** Reject the queued backpressure waiter if one exists (idempotent). */
-    private _rejectDrainWaiter(err: Error): void {
-        const waiter = this._drainWaiter;
-        if (waiter) {
-            this._drainWaiter = undefined;
-            waiter.reject(err);
-        }
-    }
-
-    /** Reset the idle timer; called whenever data flows. */
-    private _resetIdleTimer(): void {
-        const idleMs = this._idleTimeoutMs;
-        if (idleMs === undefined) {
-            return;
-        }
-        this._clearIdleTimer();
-        this._idleTimer = setTimeout(() => {
-            const err = new IdleTimeoutError(idleMs);
-            this.emit("error", err);
-            void this.close({ kind: "timeout", afterMs: idleMs });
-        }, idleMs);
-    }
-
-    /** Clear the idle timer if one is active. */
-    private _clearIdleTimer(): void {
-        if (this._idleTimer !== undefined) {
-            clearTimeout(this._idleTimer);
-            this._idleTimer = undefined;
-        }
-    }
-
-    /**
-     * (Re)start the per-read timer. When it fires, the pending read is rejected
-     * with a {@link ReadTimeoutError} — a read that never sees data should not
-     * hang forever.
-     */
-    private _resetReadTimer(): void {
-        const readMs = this._readTimeoutMs;
-        if (readMs === undefined) {
-            return;
-        }
-        this._clearReadTimer();
-        this._readTimer = setTimeout(() => {
-            this._rejectPendingRead(new ReadTimeoutError(readMs));
-        }, readMs);
-    }
-
-    /** Clear the per-read timer if one is active. */
-    private _clearReadTimer(): void {
-        if (this._readTimer !== undefined) {
-            clearTimeout(this._readTimer);
-            this._readTimer = undefined;
+    private rejectPendingRead(err: Error): void {
+        const pending = this.pendingRead;
+        if (pending) {
+            this.pendingRead = undefined;
+            pending.reject(err);
         }
     }
 }
 
-/**
- * Establish a TCP transport connection.
- *
- * Resolves DNS (via {@link resolveHost}), opens a `node:net.Socket`, wires
- * timeouts/backpressure/idle, and resolves once the connection is established.
- *
- * @example
- * ```ts
- * const transport = await connect({ host: "example.com", port: 443 });
- * await transport.write(handshakeBytes);
- * const chunk = await transport.read();
- * await transport.close();
- * ```
- */
-export function connect(options: TransportOptions): Promise<Transport> {
-    const id = `transport_${Date.now().toString(36)}` as TransportId;
-    return TcpTransport.create(id, options);
-}
-
-/** Resolve a host to an address using the configured (or default) DNS lookup. */
-export async function resolveHost(
-    host: string,
-    ipv6: boolean,
-    lookup: (
-        hostname: string,
-        options: { family: 4 | 6 },
-        callback: (err: Error | null, address: string, family: number) => void,
-    ) => void = dnsLookup,
-): Promise<ResolvedAddress> {
-    return new Promise((resolve, reject) => {
-        const family = ipv6 ? 6 : 4;
-        lookup(host, { family }, (err, address, resolvedFamily) => {
-            if (err) {
-                reject(new DnsResolutionError(host, { cause: err }));
-                return;
-            }
-            const fam = (resolvedFamily ?? family) as ResolvedAddress["family"];
-            resolve({ address, family: fam });
-        });
-    });
-}
+// resolveHost lives in its own module; re-exported here so the barrel keeps
+// surfacing it from a single, stable module path.
+export { resolveHost };

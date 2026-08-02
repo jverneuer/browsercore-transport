@@ -5,8 +5,9 @@
  * Higher layers (tls, http1, http2) compose exclusively through these exports.
  */
 
-export { connect, resolveHost, TcpTransport } from "./transport.js";
-export type { Transport } from "./transport.js";
+export { connect } from "./connect.js";
+export { resolveHost, TcpTransport } from "./transport.js";
+export type { Transport } from "./types.js";
 
 export {
     ConnectTimeoutError,
