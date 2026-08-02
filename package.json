@@ -2,6 +2,14 @@
   "name": "@browsercore/transport",
   "version": "0.1.0",
   "description": "Generic byte-stream transport abstraction (TCP sockets, DNS, backpressure). No knowledge of TLS or HTTP.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jverneuer/browsercore-transport.git"
+  },
+  "homepage": "https://github.com/jverneuer/browsercore-transport#readme",
+  "bugs": {
+    "url": "https://github.com/jverneuer/browsercore-transport/issues"
+  },
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
