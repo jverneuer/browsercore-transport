@@ -174,7 +174,13 @@ export class TcpTransport extends EventEmitter implements Transport {
             });
 
             socket.on("error", (err: Error) => {
-                this.emit("error", err);
+                // Only re-emit if a consumer is listening. During a failed
+                // connect() the transport has no owner yet, so an unhandled
+                // "error" would throw — the error is still surfaced via the
+                // rejected connect promise and the "closed"/error transition.
+                if (this.listenerCount("error") > 0) {
+                    this.emit("error", err);
+                }
                 this._rejectPendingRead(err);
                 this._rejectDrainWaiter(err);
                 if (this._state.state !== "closed") {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createServer, type Socket } from "node:net";
 import { connect } from "../src/index.js";
 import {
+    ConnectTimeoutError,
     IdleTimeoutError,
     ReadTimeoutError,
     TransportError,
@@ -255,6 +256,23 @@ describe("Step 5 — timeouts + error mapping", () => {
     });
 });
 
+describe("connect timeout", () => {
+    it("rejects with ConnectTimeoutError when the connection never establishes", async () => {
+        // Bind the connect attempt to a non-routable RFC 5737 TEST-NET-1 address so
+        // the SYN is silently dropped — no RST, no connect. With a short timeout
+        // the deferred ConnectTimeoutError must win the race against any host-level
+        // unreachable signal.
+        await expect(
+            connect({
+                host: "192.0.2.1",
+                port: 443,
+                connectTimeoutMs: 50,
+                dnsLookup: (_name, _opts, cb) => cb(null, "192.0.2.1", 4),
+            }),
+        ).rejects.toBeInstanceOf(ConnectTimeoutError);
+    });
+});
+
 describe("Step 6 — observability seam", () => {
     it("emits state transitions open -> closing -> closed with correlation id", async () => {
         const loopback = await LoopbackServer.create();
@@ -289,6 +307,75 @@ describe("Step 6 — observability seam", () => {
             expect(seen).toContain("closed");
             expect(seen.indexOf("open")).toBeLessThan(seen.indexOf("closing"));
             expect(seen.indexOf("closing")).toBeLessThan(seen.indexOf("closed"));
+        } finally {
+            await loopback.close();
+        }
+    });
+});
+
+describe("remote lifecycle — error and half-close drive state", () => {
+    it("transitions to closed/error when the client socket errors", async () => {
+        const loopback = await LoopbackServer.create();
+        try {
+            loopback.acceptOne();
+            const transport = await connect({ host: "127.0.0.1", port: loopback.port });
+
+            // A real consumer always attaches a transport-level "error" listener —
+            // the transport re-emits socket errors (transport.ts ~line 177), and an
+            // unhandled re-emit would otherwise throw. Mirror that contract here so
+            // we exercise the handler without an uncaught-error cascade.
+            transport.on("error", () => {});
+
+            // Exercise the transport's socket "error" handler (transport.ts ~line
+            // 176-181) directly: a client-side socket error must map into an "error"
+            // CloseReason and a transition to "closed". We reach the private socket
+            // via white-box access — this is the deterministic trigger for a path
+            // that a remote destroy cannot reliably reproduce (destroying the
+            // server-side socket yields a clean FIN → hadError=false on the client).
+            const socket = (transport as unknown as { _socket: Socket })._socket;
+            socket.emit("error", new Error("simulated client socket error"));
+
+            // The error handler runs synchronously on emit(), but give the
+            // subsequent "close" event a tick so the transition settles.
+            await new Promise((r) => setTimeout(r, 50));
+
+            expect(transport.state.state).toBe("closed");
+            if (transport.state.state === "closed") {
+                expect(transport.state.reason.kind).toBe("error");
+            }
+            // The recorded reason should wrap the error we emitted.
+            if (transport.state.state === "closed" && transport.state.reason.kind === "error") {
+                expect(transport.state.reason.error.message).toBe("simulated client socket error");
+            }
+            // Unref the underlying socket so it doesn't keep the event loop alive
+            // after the test ends — destroying it would ECONNRESET the peer server
+            // socket (no error listener there), surfacing as an unhandled error.
+            socket.unref();
+        } finally {
+            await loopback.close();
+        }
+    });
+
+    it("transitions to closed/remote_close when the remote sends EOF first", async () => {
+        const loopback = await LoopbackServer.create();
+        try {
+            const serverSock = loopback.acceptOne();
+            const transport = await connect({ host: "127.0.0.1", port: loopback.port });
+
+            const sock = await serverSock;
+            // Remote sends EOF/end without the client closing first
+            // (transport.ts ~line 171-174 path: socket "end" event). A clean
+            // FIN produces hadError=false on the socket "close" event, which
+            // the transport maps to a "remote_close" reason.
+            sock.end();
+
+            // Allow the "close" event (hadError=false) to drive the transition.
+            await new Promise((r) => setTimeout(r, 50));
+
+            expect(transport.state.state).toBe("closed");
+            if (transport.state.state === "closed") {
+                expect(transport.state.reason.kind).toBe("remote_close");
+            }
         } finally {
             await loopback.close();
         }

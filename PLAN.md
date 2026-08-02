@@ -8,7 +8,7 @@ each step is independently testable.
 `resolveHost()` is implemented and tested. The `lookup` parameter is injectable so
 higher layers can supply DNS-over-HTTPS later without changing this code.
 
-## Step 2 — Socket wiring + lifecycle state machine
+## Step 2 — Socket wiring + lifecycle state machine (DONE)
 
 Implement `connect()` and `TcpTransport`:
 
@@ -22,7 +22,7 @@ Implement `connect()` and `TcpTransport`:
 Tests: use a real `net.Server` loopback on an ephemeral port. Assert state transitions
 and that `connectTimeoutError` fires when the server never accepts.
 
-## Step 3 — Read path + buffering
+## Step 3 — Read path + buffering (DONE)
 
 The socket delivers data in chunks via `"data"` events. `Transport` must:
 
@@ -34,7 +34,7 @@ The socket delivers data in chunks via `"data"` events. `Transport` must:
 Tests: server writes known bytes; client reads them back in order. Verify ordering is
 preserved across multiple small writes.
 
-## Step 4 — Write path + backpressure
+## Step 4 — Write path + backpressure (DONE)
 
 1. `write(data)` calls `socket.write(data)` and resolves on the `drain`-style callback.
 2. If `socket.write()` returns `false` (kernel buffer full), wait for `"drain"` before
@@ -44,7 +44,7 @@ preserved across multiple small writes.
 Tests: write a payload larger than the kernel buffer; assert the promise does not
 resolve until the server reads (drain).
 
-## Step 5 — Timeouts + error mapping
+## Step 5 — Timeouts + error mapping (DONE)
 
 1. `idleTimeoutMs`: reset a timer on every byte in/out; fire `IdleTimeoutError` and
    close if it elapses.
@@ -57,7 +57,7 @@ Tests:
 - Server resets connection → client sees `closed` with `error` reason.
 - Double `close()` resolves once.
 
-## Step 6 — Observability seam
+## Step 6 — Observability seam (DONE)
 
 1. Emit structured events (`"data"`, `"close"`, `"error"`) so devtools can subscribe.
 2. Include `TransportId` in every event for correlation.
@@ -66,9 +66,9 @@ No new public types needed — this is purely additive.
 
 ## Definition of done
 
-- [ ] `connect()` succeeds against a loopback server.
-- [ ] Read/write preserve byte order.
-- [ ] Backpressure propagates (write awaits drain).
-- [ ] All timeouts fire with typed errors.
-- [ ] State machine reaches a `closed` terminal state in every path.
-- [ ] Every test in `tests/` passes; `tsc --build` is clean.
+- [x] `connect()` succeeds against a loopback server.
+- [x] Read/write preserve byte order.
+- [x] Backpressure propagates (write awaits drain).
+- [ ] All timeouts fire with typed errors. — test pending (connect-timeout)
+- [ ] State machine reaches a `closed` terminal state in every path. — test pending (socket-error→closed, remote-end)
+- [x] Every test in `tests/` passes; `tsc --build` is clean.
