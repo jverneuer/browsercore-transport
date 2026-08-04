@@ -29,7 +29,9 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 const DEFAULT_IPV6 = true;
 const DEFAULT_NO_DELAY = true;
 
-// Re-export so the barrel (index.ts) can surface the concrete class name once implemented.
+// Re-export the concrete `Socket` class name so consumers can reference it
+// without importing directly from `node:net`, keeping the platform boundary
+// encapsulated behind this package.
 export type { Socket };
 
 /** Concrete transport implementation over node:net.Socket. */
