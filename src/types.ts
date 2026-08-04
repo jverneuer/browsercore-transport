@@ -98,6 +98,24 @@ export interface Transport extends EventEmitter {
     close(reason?: CloseReason): Promise<void>;
 }
 
+/** Stream-based transport for TLS, HTTP/1, HTTP/2 */
+export interface StreamTransport {
+    read(): Promise<Uint8Array>;
+    write(data: Uint8Array): Promise<void>;
+    close(): Promise<void>;
+}
+
+/** Datagram-based transport for QUIC */
+export interface DatagramTransport {
+    send(datagram: Uint8Array): Promise<void>;
+    receive(): Promise<Uint8Array>;
+    close(): Promise<void>;
+}
+
+export interface DnsResolver {
+    resolve(hostname: string): Promise<string>;
+}
+
 /**
  * A promise whose settlement is controlled manually from the outside.
  *
