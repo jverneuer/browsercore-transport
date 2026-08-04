@@ -1,7 +1,7 @@
 # @browsercore/transport
 
 [![npm version](https://img.shields.io/npm/v/@browsercore/transport)](https://www.npmjs.com/package/@browsercore/transport)
-[![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jverneuer/browsercore-transport/main/coverage/badge.json)](https://github.com/jverneuer/browsercore-transport/blob/main/COVERAGE.md)
+[![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jverneuer/browsercore-transport/coverage/coverage/badge.json)](https://github.com/jverneuer/browsercore-transport/blob/main/COVERAGE.md)
 [![lint](https://img.shields.io/github/actions/workflow/status/jverneuer/browsercore-transport/ci.yml?label=lint)](https://github.com/jverneuer/browsercore-transport/actions/workflows/ci.yml)
 
 A generic byte-stream transport abstraction: reliable, ordered bytes over TCP with
