@@ -1,15 +1,15 @@
 # Coverage report
 
-Generated from `coverage-summary.json` by `scripts/coverage-md.mjs`.
+Generated from `coverage-summary.json` by `coverage-md` (@browsercore/dev).
 
 ## Total
 
 | Metric | Coverage |
 | --- | --- |
-| Statements | 99.51% (207/208) |
+| Statements | 100% (207/207) |
 | Branches | 100% (77/77) |
 | Functions | 100% (55/55) |
-| Lines | 99.51% (206/207) |
+| Lines | 100% (206/206) |
 
 ## Per-file
 
@@ -23,5 +23,5 @@ Generated from `coverage-summary.json` by `scripts/coverage-md.mjs`.
 | `src/resolve.ts` | 100% (8/8) | 100% (7/7) | 100% (3/3) | 100% (8/8) |
 | `src/timers.ts` | 100% (21/21) | 100% (4/4) | 100% (8/8) | 100% (21/21) |
 | `src/transport.ts` | 100% (124/124) | 100% (53/53) | 100% (27/27) | 100% (123/123) |
-| `src/types.ts` | 0% (0/1) | 100% (0/0) | 100% (0/0) | 0% (0/1) |
+| `src/types.ts` | 100% (0/0) | 100% (0/0) | 100% (0/0) | 100% (0/0) |
 | `src/utils.ts` | 100% (2/2) | 100% (0/0) | 100% (2/2) | 100% (2/2) |
