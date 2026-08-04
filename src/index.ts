@@ -17,6 +17,9 @@ export { connect } from "./connect.js";
 export { resolveHost, TcpTransport } from "./transport.js";
 export type { Transport } from "./types.js";
 
+export { createHttpProxy, directConnector } from "./types.js";
+export type { ProxyConnector, ProxyOptions } from "./types.js";
+
 export {
     ConnectTimeoutError,
     DnsResolutionError,
