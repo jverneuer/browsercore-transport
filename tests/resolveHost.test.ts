@@ -66,4 +66,32 @@ describe("resolveHost", () => {
         expect(capturedFamily).toBe(6);
         expect(result.family).toBe(6);
     });
+
+    it("uses the default dns.lookup when no lookup function is supplied (localhost)", async () => {
+        // The `= dnsLookup` default parameter branch only fires when the third
+        // argument is omitted. "localhost" resolves on every platform to a
+        // loopback address, so this exercises the real resolver end-to-end.
+        const result = await resolveHost("localhost", false);
+
+        expect(typeof result.address).toBe("string");
+        expect(result.address.length).toBeGreaterThan(0);
+        expect(result.family).toBe(4);
+    });
+
+    it("defaults to IPv4 family when ipv6 is false", async () => {
+        let capturedFamily = 0;
+        const fakeLookup = (
+            _host: string,
+            opts: { family: 4 | 6 },
+            cb: (err: Error | null, address: string, family: number) => void,
+        ): void => {
+            capturedFamily = opts.family;
+            cb(null, "127.0.0.1", 4);
+        };
+
+        const result = await resolveHost("example.com", false, fakeLookup);
+
+        expect(capturedFamily).toBe(4);
+        expect(result.family).toBe(4);
+    });
 });

@@ -6,7 +6,7 @@
  */
 
 import { type EventEmitter } from "node:events";
-import { lookup as dnsLookup, type LookupOneOptions } from "node:dns";
+import type { LookupOneOptions } from "node:dns";
 import type { SocketConnectOpts } from "node:net";
 
 /** Type of the configurable DNS lookup function (injectable for DoH etc). */
@@ -15,8 +15,6 @@ export type DnsLookupFn = (
     options: LookupOneOptions,
     callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void,
 ) => void;
-
-void dnsLookup;
 
 /** Branded transport connection identifier. */
 export type TransportId = string & { __brand: "TransportId" };

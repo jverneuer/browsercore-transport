@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { TransportError, DnsResolutionError, ensureTransportError } from "../src/index.js";
+import {
+    ConnectTimeoutError,
+    DnsResolutionError,
+    IdleTimeoutError,
+    ReadTimeoutError,
+    TransportError,
+    ensureTransportError,
+} from "../src/index.js";
 
 describe("TransportError", () => {
     it("captures an optional cause (covers the `options?.cause` defined path)", () => {
@@ -56,5 +63,41 @@ describe("ensureTransportError", () => {
         const e = ensureTransportError(42);
         expect(e).toBeInstanceOf(TransportError);
         expect(e.message).toBe("unknown transport error");
+    });
+});
+
+describe("ConnectTimeoutError", () => {
+    it("records the host, port, and timeout and embeds them in the message", () => {
+        const e = new ConnectTimeoutError("example.com", 443, 5_000);
+        expect(e).toBeInstanceOf(Error);
+        expect(e.kind).toBe("ConnectTimeoutError");
+        expect(e.host).toBe("example.com");
+        expect(e.port).toBe(443);
+        expect(e.timeoutMs).toBe(5_000);
+        expect(e.name).toBe("ConnectTimeoutError");
+        expect(e.message).toContain("example.com:443");
+        expect(e.message).toContain("5000ms");
+    });
+});
+
+describe("IdleTimeoutError", () => {
+    it("records the idle duration and embeds it in the message", () => {
+        const e = new IdleTimeoutError(30_000);
+        expect(e).toBeInstanceOf(Error);
+        expect(e.kind).toBe("IdleTimeoutError");
+        expect(e.idleMs).toBe(30_000);
+        expect(e.name).toBe("IdleTimeoutError");
+        expect(e.message).toContain("30000ms");
+    });
+});
+
+describe("ReadTimeoutError", () => {
+    it("records the per-read timeout and embeds it in the message", () => {
+        const e = new ReadTimeoutError(2_500);
+        expect(e).toBeInstanceOf(Error);
+        expect(e.kind).toBe("ReadTimeoutError");
+        expect(e.timeoutMs).toBe(2_500);
+        expect(e.name).toBe("ReadTimeoutError");
+        expect(e.message).toContain("2500ms");
     });
 });
