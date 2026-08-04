@@ -49,15 +49,65 @@ await transport.close();
 | `DnsResolutionError` | class | DNS lookup failed |
 | `IdleTimeoutError` | class | No data flowed within the idle timeout |
 | `ReadTimeoutError` | class | A `read()` saw no data within the per-read timeout |
+| `ensureTransportError()` | function | Narrow a caught error to `TransportError`, wrapping if needed |
+
+## Lifecycle
+
+A transport progresses through a strict state machine. The current state lives in a
+private `stateValue` backing field and is exposed through the public readonly `state`
+getter (and the `"state"` event):
+
+```
+connecting → open → closing → closed
+```
+
+- `connecting` → `open`: the TCP socket has connected; `read()`/`write()` are now allowed.
+- `open` → `closing`: a graceful `close()` was requested.
+- Any state → `closed`: the socket closed, carrying a `CloseReason` (`client_close`,
+  `remote_close`, `error`, or `timeout`).
+
+`write()` and `read()` throw a typed `TransportError` unless the transport is `open`.
 
 ## Dependency graph
+
+Runtime — what `src/` actually imports:
 
 ```
 @browsercore/transport
   └─ node:net / node:dns / node:events
 ```
 
-No other `@browsercore/*` packages are imported.
+No other `@browsercore/*` packages are imported at runtime.
+
+Build, lint, and test configuration is shared across every `@browsercore/*` package via
+[`@browsercore/dev`](https://www.npmjs.com/package/@browsercore/dev). This package
+consumes it as a devDependency (`file:../dev` during development) for:
+
+```ts
+// vitest.config.ts
+import { definePackageConfig } from "@browsercore/dev/vitest";
+export default definePackageConfig({ name: "transport" });
+```
+
+— and `oxlint.config.ts` extends the shared oxlint base, and `tsconfig.json` extends
+`@browsercore/dev/tsconfig.base.json`.
+
+## Development
+
+This package follows the shared `@browsercore/*` workflow. Commands run from this repo:
+
+```sh
+npm install
+npm run build      # tsc -p tsconfig.build.json (emit to dist/)
+npm run typecheck  # tsc -p tsconfig.json --noEmit (type-check only, no emit)
+npm test           # vitest run
+npm run lint       # oxlint --type-aware src/
+```
+
+CI runs **typecheck → lint → test → build**. If the version in `package.json` changes on
+`main`, it auto-publishes to npm with provenance and tags a release.
+
+Requires **Node >= 26**. ESM only (`"type": "module"`).
 
 ## License
 
