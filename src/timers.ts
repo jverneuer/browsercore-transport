@@ -10,6 +10,13 @@
 import { IdleTimeoutError, ReadTimeoutError } from "./errors.js";
 import type { TransportTimers } from "./types.js";
 
+/**
+ * Options for {@link createTransportTimers}.
+ *
+ * Durations are optional — a timeout is disabled when its duration is `undefined`,
+ * and every reset is a no-op in that case. Callbacks (not timers) carry the side
+ * effects so the timer module owns only `setTimeout`/`clearTimeout`.
+ */
 export interface TransportTimersOptions {
     /** Idle timeout in ms, or `undefined` to disable. */
     readonly idleTimeoutMs: number | undefined;
@@ -19,15 +26,42 @@ export interface TransportTimersOptions {
      * Called when the idle timer fires. The transport emits the error and
      * closes with a `"timeout"` reason — supplied by the caller so this module
      * stays free of transport/emitter coupling.
+     *
+     * @see IdleTimeoutError - the error passed to this callback.
      */
     readonly onIdleTimeout: (err: IdleTimeoutError) => void;
-    /** Called when the per-read timer fires, to reject the pending read. */
+    /**
+     * Called when the per-read timer fires, to reject the pending read.
+     *
+     * @see ReadTimeoutError - the error passed to this callback.
+     */
     readonly onReadTimeout: (err: ReadTimeoutError) => void;
 }
 
 /**
- * Create the timer pair. Callbacks (not timers) carry the side effects so this
- * module owns only `setTimeout`/`clearTimeout` and the timeout durations.
+ * Create the idle + per-read timer pair that drive transport lifecycle timeouts.
+ *
+ * Side effects are delegated to the caller-supplied callbacks, so this module
+ * only manages `setTimeout`/`clearTimeout` and the timeout durations. Return
+ * the {@link TransportTimers} interface and wire it into a {@link TcpTransport}.
+ *
+ * @param opts - Configuration: durations and the callbacks invoked on timeout.
+ * @returns A {@link TransportTimers} handle with reset/clear methods.
+ *
+ * @example
+ * ```ts
+ * const timers = createTransportTimers({
+ *     idleTimeoutMs: 30_000,
+ *     readTimeoutMs: 10_000,
+ *     onIdleTimeout: (err) => { transport.emit("error", err); },
+ *     onReadTimeout: (err) => { rejectPendingRead(err); },
+ * });
+ * timers.resetIdle(); // whenever data flows
+ * timers.clearAll();  // on close
+ * ```
+ *
+ * @see TransportTimers for the interface.
+ * @since 0.1.0
  */
 export function createTransportTimers(opts: TransportTimersOptions): TransportTimers {
     let idleTimer: NodeJS.Timeout | undefined;

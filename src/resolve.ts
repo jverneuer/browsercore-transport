@@ -11,11 +11,28 @@ import type { ResolvedAddress } from "./types.js";
 import { DnsResolutionError } from "./errors.js";
 
 /**
- * Resolve a host to an address using the configured (or default) DNS lookup.
+ * Resolve a host to a concrete address using the configured (or default) DNS lookup.
  *
- * @param host - DNS name or IP literal to resolve.
+ * This is the single DNS-aware entry point in the package; the rest of the
+ * transport layer operates only on resolved addresses. The lookup function is
+ * injectable so tests and DoH-based resolvers can replace `dns.lookup`.
+ *
+ * @param host - DNS name (e.g. `"example.com"`) or IP literal to resolve.
  * @param ipv6 - Prefer IPv6 addresses when `true`, IPv4 otherwise.
- * @param lookup - Injectable lookup (e.g. for DoH). Defaults to `dns.lookup`.
+ * @param lookup - Injectable lookup function (e.g. for DoH). Defaults to `dns.lookup`.
+ * @returns A promise that resolves with the {@link ResolvedAddress}.
+ * @throws {DnsResolutionError} If the lookup fails.
+ *
+ * @example
+ * ```ts
+ * // Default (system) resolver:
+ * const { address, family } = await resolveHost("example.com", false);
+ *
+ * // Custom DoH resolver:
+ * const { address } = await resolveHost("example.com", true, dohLookup);
+ * ```
+ *
+ * @since 0.1.0
  */
 export function resolveHost(
     host: string,

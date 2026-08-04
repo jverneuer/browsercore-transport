@@ -3,6 +3,14 @@
  *
  * A generic byte-stream transport abstraction independent of TLS or HTTP.
  * Higher layers (tls, http1, http2) compose exclusively through these exports.
+ *
+ * The package provides:
+ * - {@link connect} — open a {@link Transport} to a host:port
+ * - {@link TcpTransport} — the concrete `node:net.Socket`-based implementation
+ * - {@link Transport}, {@link TransportOptions}, {@link TransportState} — the domain types
+ * - A typed error hierarchy ({@link TransportError} and subclasses) matched on `kind`
+ *
+ * @module
  */
 
 export { connect } from "./connect.js";
