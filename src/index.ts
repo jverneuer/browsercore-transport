@@ -15,7 +15,7 @@
 
 export { connect } from "./connect.js";
 export { resolveHost, TcpTransport } from "./transport.js";
-export type { Transport } from "./types.js";
+export type { Transport, StreamTransport, DatagramTransport, UdpAddress, DatagramCloseReason } from "./types.js";
 
 export { createHttpProxy, directConnector } from "./types.js";
 export type { ProxyConnector, ProxyOptions } from "./types.js";
