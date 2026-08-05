@@ -274,8 +274,9 @@ export interface RandomSource {
  */
 export const nodeRandomSource: RandomSource = {
     randomBytes: (len) => {
-        const { randomBytes } = require("node:crypto");
-        return randomBytes(len);
+        // oxlint-disable-next-line no-unsafe-assignment -- require() returns any; typed locally
+        const nodeCrypto: { randomBytes: (n: number) => Uint8Array } = require("node:crypto");
+        return nodeCrypto.randomBytes(len);
     },
 };
 
