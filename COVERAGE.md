@@ -1,15 +1,15 @@
 # Coverage report
 
-Generated from `coverage-summary.json` by `scripts/coverage-md.mjs`.
+Generated from `coverage-summary.json` by `coverage-md` (@browsercore/dev).
 
 ## Total
 
 | Metric | Coverage |
 | --- | --- |
-| Statements | 99.51% (207/208) |
-| Branches | 100% (77/77) |
-| Functions | 100% (55/55) |
-| Lines | 99.51% (206/207) |
+| Statements | 95.81% (252/263) |
+| Branches | 97.75% (87/89) |
+| Functions | 95.89% (70/73) |
+| Lines | 96.16% (251/261) |
 
 ## Per-file
 
@@ -19,9 +19,10 @@ Generated from `coverage-summary.json` by `scripts/coverage-md.mjs`.
 | `src/deferred.ts` | 100% (4/4) | 100% (0/0) | 100% (2/2) | 100% (4/4) |
 | `src/drain.ts` | 100% (16/16) | 100% (4/4) | 100% (6/6) | 100% (16/16) |
 | `src/errors.ts` | 100% (30/30) | 100% (9/9) | 100% (6/6) | 100% (30/30) |
+| `src/events.ts` | 100% (11/11) | 100% (0/0) | 100% (6/6) | 100% (11/11) |
 | `src/index.ts` | 100% (0/0) | 100% (0/0) | 100% (0/0) | 100% (0/0) |
 | `src/resolve.ts` | 100% (8/8) | 100% (7/7) | 100% (3/3) | 100% (8/8) |
 | `src/timers.ts` | 100% (21/21) | 100% (4/4) | 100% (8/8) | 100% (21/21) |
 | `src/transport.ts` | 100% (124/124) | 100% (53/53) | 100% (27/27) | 100% (123/123) |
-| `src/types.ts` | 0% (0/1) | 100% (0/0) | 100% (0/0) | 0% (0/1) |
+| `src/types.ts` | 75.55% (34/45) | 83.33% (10/12) | 75% (9/12) | 77.27% (34/44) |
 | `src/utils.ts` | 100% (2/2) | 100% (0/0) | 100% (2/2) | 100% (2/2) |
