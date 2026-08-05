@@ -4,8 +4,14 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   build-and-publish:
     uses: jverneuer/browsercore-dev/.github/workflows/reusable-ci.yml@ci-v1
     with:
       node-version: '26'
+    permissions:
+      contents: write
+      id-token: write
