@@ -43,3 +43,6 @@ export { nodeRandomSource, DeterministicRandom } from "./types.js";
 export type { RandomSource } from "./types.js";
 
 export { assertNever } from "./utils.js";
+
+export { createTypedEventEmitter } from "./events.js";
+export type { TypedEventEmitter } from "./events.js";
