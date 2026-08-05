@@ -1,6 +1,6 @@
 {
     "name": "@browsercore/transport",
-    "version": "0.2.1",
+    "version": "0.2.2",
     "description": "Generic byte-stream transport abstraction (TCP sockets, DNS, backpressure). No knowledge of TLS or HTTP.",
     "repository": {
         "type": "git",

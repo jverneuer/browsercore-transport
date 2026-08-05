@@ -8,8 +8,13 @@
 import { connect } from "./connect.js";
 import { type EventEmitter } from "node:events";
 import type { LookupOneOptions } from "node:dns";
+import { createRequire } from "node:module";
 import type { SocketConnectOpts } from "node:net";
 import { TransportError } from "./errors.js";
+
+// ESM does not expose `require`. createRequire bridges the gap for the one
+// Node-builtin import (node:crypto.randomBytes) the default RandomSource needs.
+const require = createRequire(import.meta.url);
 
 /**
  * Type of the configurable DNS lookup function, injectable so tests and
@@ -269,9 +274,9 @@ export interface RandomSource {
  */
 export const nodeRandomSource: RandomSource = {
     randomBytes: (len) => {
-        // oxlint-disable-next-line no-require-imports
-        const { randomBytes } = require("node:crypto") as { randomBytes: (len: number) => Uint8Array };
-        return randomBytes(len);
+        // oxlint-disable-next-line no-unsafe-assignment -- require() returns any; typed locally
+        const nodeCrypto: { randomBytes: (n: number) => Uint8Array } = require("node:crypto");
+        return nodeCrypto.randomBytes(len);
     },
 };
 
