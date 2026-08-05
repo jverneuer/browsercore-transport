@@ -1,0 +1,13 @@
+{
+  "entryPoints": ["src/index.ts"],
+  "out": "docs",
+  "plugin": ["typedoc-plugin-markdown", "typedoc-plugin-llms-txt"],
+  "theme": "markdown",
+  "excludeExternals": true,
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "readme": "none",
+  "includeVersion": true,
+  "categorizeByGroup": true,
+  "categoryOrder": ["Classes", "Interfaces", "Type Aliases", "Functions", "Variables"]
+}

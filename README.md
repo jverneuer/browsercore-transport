@@ -4,10 +4,7 @@
 [![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jverneuer/browsercore-transport/coverage/coverage/badge.json)](https://github.com/jverneuer/browsercore-transport/blob/main/COVERAGE.md)
 [![lint](https://img.shields.io/github/actions/workflow/status/jverneuer/browsercore-transport/ci.yml?label=lint)](https://github.com/jverneuer/browsercore-transport/actions/workflows/ci.yml)
 
-A generic byte-stream transport abstraction: reliable, ordered bytes over TCP with
-connection lifecycle, backpressure, timeouts, and DNS resolution. It owns no knowledge
-of TLS, HTTP, or browser fingerprints — higher layers (`tls`, `http1`, `http2`) compose
-exclusively through its public interface. This is the bottom of the browsercore stack.
+@browsercore/transport abstracts socket management, DNS resolution, connection lifecycle, backpressure, and timeouts behind a small, strongly typed interface. It deliberately knows nothing about TLS, HTTP, QUIC, proxies, or browser fingerprinting, making it the foundation on which higher protocol layers are built. This package forms the lowest layer of the BrowserCore networking stack.
 
 ## Install
 
@@ -31,6 +28,39 @@ transport.on("state", (s) => { /* connecting -> open -> closing -> closed */ });
 
 await transport.close();
 ```
+
+## Package Dependencies
+
+```
+@browsercore/transport
+├── node:net
+├── node:dns
+└── node:events
+```
+
+This package has no runtime dependencies and imports no other @browsercore/* packages.
+
+## Position in BrowserCore
+
+```
+Application
+      │
+ HTTP/3 / HTTP/2 / HTTP/1
+      │
+      TLS
+      │
+@browsercore/transport
+      │
+     TCP
+      │
+      IP
+```
+
+Every higher networking layer communicates with the network exclusively through the Transport interface.
+
+## Documentation
+
+Full API documentation (generated from TSDoc annotations): [docs/README.md](docs/README.md)
 
 ## Public API
 

@@ -1,6 +1,6 @@
 {
     "name": "@browsercore/transport",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "description": "Generic byte-stream transport abstraction (TCP sockets, DNS, backpressure). No knowledge of TLS or HTTP.",
     "repository": {
         "type": "git",
@@ -22,6 +22,7 @@
     },
     "files": [
         "dist",
+        "bin",
         "LICENSE",
         "README.md"
     ],
@@ -35,7 +36,9 @@
         "prepublishOnly": "npm run clean && npm run build",
         "typecheck": "tsc -p tsconfig.json --noEmit",
         "test": "vitest run",
-        "lint": "oxlint --type-aware src/"
+        "lint": "oxlint --type-aware src/",
+        "coverage-md": "./bin/coverage-md.mjs",
+        "docs": "typedoc"
     },
     "devDependencies": {
         "@browsercore/dev": "latest",
@@ -43,7 +46,10 @@
         "@vitest/coverage-v8": "^4.1.10",
         "oxlint": "^1.76.0",
         "oxlint-tsgolint": "7.0.2001",
-        "typescript": "^7.0.0",
+        "typedoc": "^0.28.20",
+        "typedoc-plugin-llms-txt": "^0.1.2",
+        "typedoc-plugin-markdown": "^4.12.0",
+        "typescript": "^6.0.3",
         "vitest": "^4.1.10"
     },
     "engines": {

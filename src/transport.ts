@@ -34,7 +34,29 @@ const DEFAULT_NO_DELAY = true;
 // encapsulated behind this package.
 export type { Socket };
 
-/** Concrete transport implementation over node:net.Socket. */
+/**
+ * Concrete transport implementation over `node:net.Socket`.
+ *
+ * A reliable, ordered byte stream with no knowledge of TLS, HTTP, or browser
+ * fingerprints. Higher layers (tls, http1, http2) compose exclusively through
+ * this class. The stateful lifecycle lives here; timer and backpressure concerns
+ * are composed in from {@link TransportTimers} and {@link DrainQueue} so each
+ * file stays focused.
+ *
+ * Use {@link connect} to obtain an instance rather than constructing directly.
+ *
+ * @example
+ * ```ts
+ * const transport = await connect({ host: "example.com", port: 443 });
+ * await transport.write(new TextEncoder().encode("hello"));
+ * const chunk = await transport.read();
+ * await transport.close();
+ * ```
+ *
+ * @see Transport for the public interface.
+ * @see connect for the factory entry point.
+ * @since 0.1.0
+ */
 export class TcpTransport extends EventEmitter implements Transport {
     public readonly id: TransportId;
     // `_state` is the one exception to the no-underscore rule: the public
@@ -53,20 +75,48 @@ export class TcpTransport extends EventEmitter implements Transport {
     }
 
     /**
-     * Factory: resolves DNS, opens the socket, and resolves once the connection
-     * is established. Rejects on DNS failure, connect timeout, or socket error.
+     * Factory: resolve DNS, open the socket, and resolve once the connection is established.
+ *
+     * Prefer {@link connect}, which mints the id for you. This is exposed as a
+     * static method for cases where you need to supply a specific {@link TransportId}
+     * (e.g. for correlation across logs).
+     *
+     * @param id - Opaque correlation id assigned to the transport.
+     * @param options - Connection target and timeout/backpressure configuration.
+     * @returns A promise that resolves with a connected {@link TcpTransport}.
+     * @throws {DnsResolutionError} If the host cannot be resolved.
+     * @throws {ConnectTimeoutError} If the TCP handshake does not complete in time.
+     * @throws {TransportError} On socket errors during connection.
+     *
+     * @since 0.1.0
      */
     public static create(id: TransportId, options: TransportOptions): Promise<TcpTransport> {
         const transport = new TcpTransport(id);
         return transport._establish(options).then(() => transport);
     }
 
+    /**
+     * Private constructor — instances are created via {@link TcpTransport.create}.
+     *
+     * @param id - Opaque correlation id assigned to the transport.
+     */
     private constructor(id: TransportId) {
         super();
         this.id = id;
     }
 
-    /** Resolve DNS, open the socket, and wire lifecycle events. */
+    /**
+     * Resolve DNS, open the socket, and wire lifecycle events.
+     *
+     * Sets up the connect timer, idle/per-read timers, the backpressure queue,
+     * and all socket event handlers (`connect`, `data`, `drain`, `end`, `error`, `close`).
+     * Resolves once the socket connects; rejects on DNS failure, connect timeout, or error.
+     *
+     * @param options - Connection configuration.
+     * @throws {DnsResolutionError} If DNS resolution fails.
+     * @throws {ConnectTimeoutError} If the connect timeout elapses.
+     * @throws {TransportError} On socket error before connection.
+     */
     private async _establish(options: TransportOptions): Promise<void> {
         const connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
         const ipv6 = options.ipv6 ?? DEFAULT_IPV6;
@@ -176,6 +226,12 @@ export class TcpTransport extends EventEmitter implements Transport {
      * the promise stays pending until the `"drain"` event fires — this is how
      * backpressure propagates to higher layers instead of buffering unboundedly
      * in userspace.
+     *
+     * @param data - Bytes to write.
+     * @returns A promise that resolves once the kernel has accepted the data.
+     * @throws {TransportError} If the transport is not open.
+     *
+     * @since 0.1.0
      */
     public write(data: Uint8Array): Promise<void> {
         this.ensureOpen();
@@ -227,7 +283,22 @@ export class TcpTransport extends EventEmitter implements Transport {
         });
     }
 
-    /** Read the next chunk of bytes, or reject if the socket closes / times out first. */
+    /**
+     * Read the next chunk of bytes, or reject if the socket closes / times out first.
+     *
+     * If data was already buffered (received between reads), it is returned
+     * immediately. Otherwise the returned promise resolves on the next `"data"`
+     * event — or rejects with a {@link ReadTimeoutError} if a per-read timeout
+     * is configured, or with a {@link TransportError} if the socket closes.
+     *
+     * For a streaming read API, subscribe to the `"data"` event directly instead.
+     *
+     * @returns A promise that resolves with the next chunk of bytes.
+     * @throws {TransportError} If the transport is not open or the socket closes.
+     * @throws {ReadTimeoutError} If no data arrives within the per-read timeout.
+     *
+     * @since 0.1.0
+     */
     public read(): Promise<Uint8Array> {
         this.ensureOpen();
         const buffered = this.readBuffer.shift();
@@ -240,7 +311,18 @@ export class TcpTransport extends EventEmitter implements Transport {
         return deferred.promise;
     }
 
-    /** Gracefully close the transport. Resolves once the socket has closed. */
+    /**
+     * Gracefully close the transport. Resolves once the socket has closed.
+     *
+     * Idempotent: calling `close` on an already-closing or closed transport
+     * resolves immediately. The `reason` is recorded in the final
+     * {@link TransportState} and emitted for observers.
+     *
+     * @param reason - Why the transport is being closed. Defaults to `{ kind: "client_close" }`.
+     * @returns A promise that resolves once the socket has fully closed.
+     *
+     * @since 0.1.0
+     */
     public close(reason?: CloseReason): Promise<void> {
         const effectiveReason: CloseReason = reason ?? { kind: "client_close" };
         if (this.state.state === "closed" || this.state.state === "closing") {
@@ -261,7 +343,14 @@ export class TcpTransport extends EventEmitter implements Transport {
         });
     }
 
-    /** Throw a typed error unless the transport is in the "open" state. */
+    /**
+     * Throw a typed error unless the transport is in the `"open"` state.
+     *
+     * Guards every public operation (`write`, `read`) against use of a transport
+     * that is still connecting, is closing, or has already closed.
+     *
+     * @throws {TransportError} Unless the state is `"open"`.
+     */
     private ensureOpen(): void {
         const s = this.state;
         switch (s.state) {
@@ -278,13 +367,27 @@ export class TcpTransport extends EventEmitter implements Transport {
         }
     }
 
-    /** Transition to the next lifecycle state and emit it for observers. */
+    /**
+     * Transition to the next lifecycle state and emit it for observers.
+     *
+     * Updates the backing {@link TransportState} and emits a `"state"` event
+     * so higher layers can react to lifecycle changes (open → closing → closed).
+     *
+     * @param next - The new {@link TransportState} to transition into.
+     */
     private transition(next: TransportState): void {
         this._state = next;
         this.emit("state", next);
     }
 
-    /** Reject a pending read if one exists (idempotent — clears the slot either way). */
+    /**
+     * Reject a pending read if one exists (idempotent — clears the slot either way).
+     *
+     * Drives the pending {@link Transport.read} promise to rejection on socket
+     * error, close, or timeout. Safe to call when no read is pending.
+     *
+     * @param err - The error to reject the pending read with.
+     */
     private rejectPendingRead(err: Error): void {
         const pending = this.pendingRead;
         if (pending) {
