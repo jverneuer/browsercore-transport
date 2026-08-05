@@ -155,6 +155,50 @@ export interface Transport extends EventEmitter {
 }
 
 /**
+ * Stream-based transport — a reliable ordered byte stream (TCP).
+ * Alias for {@link Transport} so higher layers can depend on the stream
+ * abstraction explicitly, distinct from {@link DatagramTransport}.
+ */
+export type StreamTransport = Transport;
+
+/**
+ * UDP datagram transport abstraction. Implemented by a UDP transport package
+ * (or a thin `node:dgram` adapter); injected into @browsercore/quic so QUIC
+ * stays testable with a fake datagram transport and has no dependency on
+ * socket internals.
+ */
+export interface DatagramTransport {
+    /** Opaque identifier for logging / correlation. */
+    readonly id: string;
+    /** Send a datagram to `address`. Resolves once handed to the kernel / buffered. */
+    send(data: Uint8Array, address: UdpAddress): Promise<void>;
+    /**
+     * Receive the next datagram. Resolves with the bytes and the sender's
+     * address, or rejects if the transport closes first.
+     */
+    recv(): Promise<{ readonly data: Uint8Array; readonly from: UdpAddress }>;
+    /** Close the transport. */
+    close(reason?: DatagramCloseReason): Promise<void>;
+}
+
+/** A resolved UDP socket address. */
+export interface UdpAddress {
+    /** Hostname or IP address. */
+    readonly address: string;
+    /** UDP port number. */
+    readonly port: number;
+    /** IP family — 4 for IPv4, 6 for IPv6. */
+    readonly family: 4 | 6;
+}
+
+/** Why a datagram transport was closed. */
+export type DatagramCloseReason =
+    | { readonly kind: "client_close" }
+    | { readonly kind: "remote_close" }
+    | { readonly kind: "error"; readonly error: Error }
+    | { readonly kind: "timeout"; readonly afterMs: number };
+
+/**
  * A promise whose settlement is controlled manually from the outside.
  *
  * The bridge between event-callback land (socket `"data"`, `"drain"`) and the
@@ -215,8 +259,8 @@ export interface TransportTimers {
  * deterministically against synthetic randomness.
  */
 export interface RandomSource {
-    /** Return `length` cryptographically or deterministically derived random bytes. */
-    bytes(length: number): Uint8Array;
+    /** Generate `length` cryptographically-strong random bytes. */
+    randomBytes(length: number): Uint8Array;
 }
 
 /**
@@ -224,8 +268,9 @@ export interface RandomSource {
  * Used by protocol layers unless a deterministic source is injected.
  */
 export const nodeRandomSource: RandomSource = {
-    bytes: (len) => {
-        const { randomBytes } = require("node:crypto") as typeof import("node:crypto");
+    randomBytes: (len) => {
+        // oxlint-disable-next-line no-require-imports
+        const { randomBytes } = require("node:crypto") as { randomBytes: (len: number) => Uint8Array };
         return randomBytes(len);
     },
 };
@@ -238,9 +283,9 @@ export const nodeRandomSource: RandomSource = {
 export class DeterministicRandom implements RandomSource {
     private state: number;
     constructor(seed: number) {
-        this.state = seed | 0;
+        this.state = Math.trunc(seed);
     }
-    bytes(length: number): Uint8Array {
+    randomBytes(length: number): Uint8Array {
         const out = new Uint8Array(length);
         for (let i = 0; i < length; i++) {
             // xorshift32
