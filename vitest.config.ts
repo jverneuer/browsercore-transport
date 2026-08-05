@@ -13,6 +13,7 @@ export default defineConfig({
             provider: "v8",
             include: ["src/**/*.ts"],
             reporter: ["text", "json-summary"],
+            thresholds: { statements: 94, branches: 94, functions: 94, lines: 94 },
         },
     },
 });
