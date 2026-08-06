@@ -1,30 +1,25 @@
-{
-    "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/crates/oxlint/configuration_schema.json",
-    "plugins": [
-        "typescript",
-        "unicorn",
-        "import",
-        "promise",
-        "node"
-    ],
-    "env": {
-        "node": true
+import { defineConfig } from "oxlint";
+
+export default defineConfig({
+    plugins: ["typescript", "unicorn", "import", "promise", "node"],
+    env: {
+        node: true,
     },
-    "categories": {
-        "correctness": "error",
-        "suspicious": "error",
-        "pedantic": "error",
-        "perf": "warn",
-        "style": "off"
+    categories: {
+        correctness: "error",
+        suspicious: "error",
+        pedantic: "error",
+        perf: "warn",
+        style: "off",
     },
-    "rules": {
+    rules: {
         "no-console": "warn",
         "no-debugger": "error",
-        "eqeqeq": "error",
+        eqeqeq: "error",
         "no-var": "error",
         "prefer-const": "error",
         "object-shorthand": "error",
-        "curly": "error",
+        curly: "error",
         "no-duplicate-imports": "error",
         "no-useless-constructor": "error",
         "no-unreachable": "error",
@@ -44,10 +39,6 @@
         "unicorn/no-array-reduce": "off",
         "unicorn/no-process-exit": "error",
         "unicorn/no-array-sort": "off",
-        // prefer-event-target: Transport extends EventEmitter and relies on
-        // .emit()/.on()/.once()/listenerCount() — none exist on EventTarget, and
-        // higher layers depend on Transport being an EventEmitter. Not fixable
-        // without a behavioral rewrite, so the rule is disabled.
         "unicorn/prefer-event-target": "off",
         "no-inline-comments": "off",
         "max-lines": "off",
@@ -65,12 +56,7 @@
         // `_transition`). The stack is inconsistent on this — http1/http2 use
         // un-prefixed privates while quic uses `_`-prefixed — so the rule is
         // disabled here to preserve the existing convention and behavior.
-        "no-underscore-dangle": "off"
+        "no-underscore-dangle": "off",
     },
-    "ignorePatterns": [
-        "dist",
-        "coverage",
-        "node_modules",
-        "*.config.js"
-    ]
-}
+    ignorePatterns: ["dist", "coverage", "node_modules", "*.config.js"],
+});
