@@ -34,7 +34,7 @@ export type TransportErrorDetails = Record<string, unknown>;
  * @since 0.1.0
  */
 export class TransportError extends Error {
-    public readonly kind = "TransportError" as const;
+    public readonly kind: string = "TransportError";
     public readonly details: TransportErrorDetails;
     /** `Error | undefined` (not `?`) so assignment is valid under exactOptionalPropertyTypes. */
     public override readonly cause: Error | undefined;
@@ -76,8 +76,8 @@ export class TransportError extends Error {
  *
  * @since 0.1.0
  */
-export class ConnectTimeoutError extends Error {
-    public readonly kind = "ConnectTimeoutError" as const;
+export class ConnectTimeoutError extends TransportError {
+    public override readonly kind = "ConnectTimeoutError" as const;
     public readonly timeoutMs: number;
     public readonly host: string;
     public readonly port: number;
@@ -88,8 +88,7 @@ export class ConnectTimeoutError extends Error {
      * @param timeoutMs - Configured connect timeout in milliseconds.
      */
     constructor(host: string, port: number, timeoutMs: number) {
-        super(`Connection to ${host}:${port} timed out after ${timeoutMs}ms`);
-        this.name = "ConnectTimeoutError";
+        super(`Connection to ${host}:${port} timed out after ${timeoutMs}ms`, { host, port, timeoutMs });
         this.timeoutMs = timeoutMs;
         this.host = host;
         this.port = port;
@@ -106,20 +105,17 @@ export class ConnectTimeoutError extends Error {
  *
  * @since 0.1.0
  */
-export class DnsResolutionError extends Error {
-    public readonly kind = "DnsResolutionError" as const;
+export class DnsResolutionError extends TransportError {
+    public override readonly kind = "DnsResolutionError" as const;
     public readonly host: string;
-    public override readonly cause: Error | undefined;
 
     /**
      * @param host - The hostname that failed to resolve.
      * @param options - `cause` wraps the underlying DNS error.
      */
     constructor(host: string, options?: { cause?: Error }) {
-        super(`DNS resolution failed for ${host}: ${options?.cause?.message ?? "unknown"}`);
-        this.name = "DnsResolutionError";
+        super(`DNS resolution failed for ${host}: ${options?.cause?.message ?? "unknown"}`, { host }, options);
         this.host = host;
-        this.cause = options?.cause;
     }
 }
 
@@ -131,16 +127,15 @@ export class DnsResolutionError extends Error {
  *
  * @since 0.1.0
  */
-export class IdleTimeoutError extends Error {
-    public readonly kind = "IdleTimeoutError" as const;
+export class IdleTimeoutError extends TransportError {
+    public override readonly kind = "IdleTimeoutError" as const;
     public readonly idleMs: number;
 
     /**
      * @param idleMs - The configured idle timeout in milliseconds.
      */
     constructor(idleMs: number) {
-        super(`Transport idle for ${idleMs}ms — closing`);
-        this.name = "IdleTimeoutError";
+        super(`Transport idle for ${idleMs}ms — closing`, { idleMs });
         this.idleMs = idleMs;
     }
 }
@@ -153,16 +148,15 @@ export class IdleTimeoutError extends Error {
  *
  * @since 0.1.0
  */
-export class ReadTimeoutError extends Error {
-    public readonly kind = "ReadTimeoutError" as const;
+export class ReadTimeoutError extends TransportError {
+    public override readonly kind = "ReadTimeoutError" as const;
     public readonly timeoutMs: number;
 
     /**
      * @param timeoutMs - The configured per-read timeout in milliseconds.
      */
     constructor(timeoutMs: number) {
-        super(`No data received within ${timeoutMs}ms read timeout`);
-        this.name = "ReadTimeoutError";
+        super(`No data received within ${timeoutMs}ms read timeout`, { timeoutMs });
         this.timeoutMs = timeoutMs;
     }
 }
