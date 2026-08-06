@@ -1,12 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeAll } from "vitest";
 import { createServer, type Server, type Socket } from "node:net";
 import { connect } from "../src/connect.js";
 import {
     createHttpProxy,
     directConnector,
+    setConnectorDeps,
     type ProxyConnector,
 } from "../src/index.js";
 import type { Transport } from "../src/types.js";
+import { nodeNet, nodeDns } from "./helpers.js";
+
+// Initialize platform dependencies for directConnector and createHttpProxy.
+beforeAll(() => {
+    setConnectorDeps({ net: nodeNet, dns: nodeDns });
+});
 
 /**
  * Loopback TCP server on an ephemeral port that tracks accepted sockets so

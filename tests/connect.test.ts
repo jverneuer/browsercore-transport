@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createServer, type Socket } from "node:net";
 import { connect } from "../src/connect.js";
 import { TcpTransport } from "../src/transport.js";
-import type { Transport, TransportId } from "../src/types.js";
+import type { TransportId } from "../src/types.js";
+import { nodeNet, nodeDns, mockDns } from "./helpers.js";
 
 /**
  * Minimal loopback TCP server on an ephemeral port. Accepted sockets get a
@@ -48,7 +49,7 @@ describe("connect", () => {
     it("returns a TcpTransport in the 'open' state once connected", async () => {
         const loop = await Loopback.create();
         try {
-            const transport = await connect({ host: "127.0.0.1", port: loop.port });
+            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
             expect(transport).toBeInstanceOf(TcpTransport);
             expect(transport.state.state).toBe("open");
             await transport.close();
@@ -62,7 +63,7 @@ describe("connect", () => {
         // verify the shape of the correlation handle rather than its uniqueness.
         const loop = await Loopback.create();
         try {
-            const transport = await connect({ host: "127.0.0.1", port: loop.port });
+            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
             const id = transport.id as TransportId;
             expect(typeof id).toBe("string");
             expect(id.startsWith("transport_")).toBe(true);
@@ -76,16 +77,17 @@ describe("connect", () => {
         }
     });
 
-    it("passes a custom dnsLookup through to resolution", async () => {
-        // connect() forwards options.dnsLookup into resolveHost. Supplying a
-        // fake lookup that returns a fixed loopback address proves the passthrough
+    it("uses a custom DnsResolver for resolution", async () => {
+        // connect() forwards options.dns into resolveHost. Supplying a
+        // mock resolver that returns a fixed loopback address proves the injection
         // without depending on the platform resolver.
         const loop = await Loopback.create();
         try {
             const transport = await connect({
                 host: "placeholder.test",
                 port: loop.port,
-                dnsLookup: (_name, _opts, cb) => cb(null, "127.0.0.1", 4),
+                net: nodeNet,
+                dns: mockDns("127.0.0.1", 4),
             });
             expect(transport.state.state).toBe("open");
             await transport.close();
@@ -94,15 +96,21 @@ describe("connect", () => {
         }
     });
 
-    it("uses the real dns.lookup by default when no custom lookup is supplied", async () => {
+    it("uses the real dns.lookup by default when no custom resolver is supplied", async () => {
         // Default path: connect() resolves "localhost" via the platform resolver.
-        // Exercises the `lookup = dnsLookup` default branch in resolveHost.
+        // Exercises the real DNS path with the Node adapter.
         // ipv6:false so resolution targets IPv4 — the loopback server listens on
         // 127.0.0.1 only; without this, connect() defaults to ipv6:true and
         // resolves localhost to ::1, which the IPv4 server does not serve.
         const loop = await Loopback.create();
         try {
-            const transport = await connect({ host: "localhost", port: loop.port, ipv6: false });
+            const transport = await connect({
+                host: "localhost",
+                port: loop.port,
+                ipv6: false,
+                net: nodeNet,
+                dns: nodeDns,
+            });
             expect(transport.state.state).toBe("open");
             await transport.close();
         } finally {
@@ -119,7 +127,8 @@ describe("connect", () => {
                 host: "192.0.2.1",
                 port: 443,
                 connectTimeoutMs: 50,
-                dnsLookup: (_name, _opts, cb) => cb(null, "192.0.2.1", 4),
+                net: nodeNet,
+                dns: mockDns("192.0.2.1", 4),
             }),
         ).rejects.toThrow(/timed out after 50ms/);
     });
@@ -133,6 +142,8 @@ describe("TcpTransport.create", () => {
             const transport = await TcpTransport.create(id, {
                 host: "127.0.0.1",
                 port: loop.port,
+                net: nodeNet,
+                dns: nodeDns,
             });
             expect(transport).toBeInstanceOf(TcpTransport);
             expect(transport.id).toBe(id);

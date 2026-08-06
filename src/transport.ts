@@ -4,9 +4,13 @@
  * No knowledge of TLS, HTTP, or browser fingerprints. Higher layers compose on top.
  * The stateful lifecycle lives in `TcpTransport`; timer and backpressure concerns
  * are composed in from dedicated modules so each file stays focused.
+ *
+ * Platform-specific socket implementations are injected via {@link TransportOptions.net}
+ * — this class never imports `node:net` directly, keeping the transport
+ * runtime-agnostic (Node, Bun, Deno, Cloudflare Workers, mocks).
  */
 
-import { connect as netConnect, type Socket } from "node:net";
+import type { Socket } from "@browsercore/contracts";
 import { EventEmitter } from "node:events";
 import type {
     CloseReason,
@@ -29,13 +33,8 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 const DEFAULT_IPV6 = true;
 const DEFAULT_NO_DELAY = true;
 
-// Re-export the concrete `Socket` class name so consumers can reference it
-// without importing directly from `node:net`, keeping the platform boundary
-// encapsulated behind this package.
-export type { Socket };
-
 /**
- * Concrete transport implementation over `node:net.Socket`.
+ * Concrete transport implementation over an injected {@link Net} socket.
  *
  * A reliable, ordered byte stream with no knowledge of TLS, HTTP, or browser
  * fingerprints. Higher layers (tls, http1, http2) compose exclusively through
@@ -122,7 +121,7 @@ export class TcpTransport extends EventEmitter implements Transport {
         const ipv6 = options.ipv6 ?? DEFAULT_IPV6;
         const noDelay = options.noDelay ?? DEFAULT_NO_DELAY;
 
-        const resolved = await resolveHost(options.host, ipv6, options.dnsLookup);
+        const resolved = await resolveHost(options.host, ipv6, options.dns);
 
         // Timers and the backpressure queue are created here (not the
         // constructor) because their configuration derives from `options`.
@@ -140,13 +139,12 @@ export class TcpTransport extends EventEmitter implements Transport {
         this.drain = createDrainQueue();
 
         return new Promise<void>((resolve, reject) => {
-            const socket = netConnect({
+            const socket = options.net.connect({
                 host: resolved.address,
                 port: options.port,
                 noDelay,
-                localAddress: options.localAddress,
+                ...(options.localAddress === undefined ? {} : { localAddress: options.localAddress }),
                 family: resolved.family,
-                ...options.socketOptions,
             });
             this.socket = socket;
 
@@ -164,10 +162,10 @@ export class TcpTransport extends EventEmitter implements Transport {
                 resolve();
             });
 
-            socket.on("data", (chunk: Buffer) => {
+            socket.on("data", (chunk: Uint8Array) => {
                 this.timers.resetIdle();
                 this.timers.clearRead();
-                const data = new Uint8Array(chunk);
+                const data = chunk;
                 this.emit("data", data);
                 const pending = this.pendingRead;
                 if (pending) {

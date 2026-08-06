@@ -3,26 +3,14 @@
  *
  * This package owns NO knowledge of TLS, HTTP, or browser fingerprints.
  * It is a pure byte-stream abstraction over a reliable ordered transport (TCP).
+ * Platform-specific implementations (node:net, bun, deno) are injected —
+ * this package imports only interfaces from @browsercore/contracts.
  */
 
 import { connect } from "./connect.js";
 import { type EventEmitter } from "node:events";
-import type { LookupOneOptions } from "node:dns";
-import type { SocketConnectOpts } from "node:net";
+import type { Net, DnsResolver } from "@browsercore/contracts";
 import { TransportError } from "./errors.js";
-
-/**
- * Type of the configurable DNS lookup function, injectable so tests and
- * DoH-based resolvers can replace the default `dns.lookup`.
- *
- * The signature mirrors `dns.lookup` — a Node-style callback with the resolved
- * address and family.
- */
-export type DnsLookupFn = (
-    hostname: string,
-    options: LookupOneOptions,
-    callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void,
-) => void;
 
 /**
  * Branded transport connection identifier.
@@ -58,11 +46,11 @@ export type TransportState =
     | { readonly state: "closed"; readonly reason: CloseReason };
 
 /**
- * Options for {@link connect}. Extends Node's socket options with our own
- * timeout, backpressure, and DNS configuration.
+ * Options for {@link connect}.
  *
  * All timeout options are disabled by default — set a value to enable the
- * corresponding timer.
+ * corresponding timer. Platform-specific implementations (`net`, `dns`) are
+ * injected by the application entrypoint (e.g. browsersmith).
  */
 export interface TransportOptions {
     /** Target host (DNS name or IP literal). */
@@ -96,12 +84,6 @@ export interface TransportOptions {
      */
     readonly ipv6?: boolean;
     /**
-     * Custom DNS lookup function (e.g. for DoH). Defaults to `dns.lookup`.
-     *
-     * @defaultValue dns.lookup
-     */
-    readonly dnsLookup?: DnsLookupFn;
-    /**
      * NODELAY — disable Nagle's algorithm. Recommended for protocol stacks
      * where low latency matters.
      *
@@ -110,8 +92,16 @@ export interface TransportOptions {
     readonly noDelay?: boolean;
     /** Local interface address to bind. */
     readonly localAddress?: string;
-    /** Pass-through options to `net.connect` for anything not covered above. */
-    readonly socketOptions?: Omit<SocketConnectOpts, "host" | "port" | "lookup">;
+    /**
+     * Platform-provided TCP implementation. Injected by the application
+     * entrypoint (e.g. browsersmith passes the Node adapter).
+     */
+    readonly net: Net;
+    /**
+     * Platform-provided DNS resolver. Injected by the application
+     * entrypoint (e.g. browsersmith passes the Node adapter).
+     */
+    readonly dns: DnsResolver;
 }
 
 /** A resolved address, returned by the DNS resolution step. */
@@ -281,9 +271,45 @@ export interface ProxyConnector {
     connect(targetHost: string, targetPort: number): Promise<Transport>;
 }
 
+/**
+ * Platform dependencies for {@link directConnector} and {@link createHttpProxy}.
+ *
+ * The application entrypoint (browsersmith) sets these once at startup.
+ * This avoids threading `net`/`dns` through every connector call while keeping
+ * the transport package free of any `node:net` / `node:dns` import.
+ */
+export interface ConnectorDeps {
+    readonly net: Net;
+    readonly dns: DnsResolver;
+}
+
+let currentDeps: ConnectorDeps | undefined;
+
+/** Set the platform dependencies used by {@link directConnector} and {@link createHttpProxy}. */
+export function setConnectorDeps(deps: ConnectorDeps): void {
+    currentDeps = deps;
+}
+
+/** Reset stored platform dependencies (tests only). */
+export function resetConnectorDeps(): void {
+    currentDeps = undefined;
+}
+
+function requireDeps(): ConnectorDeps {
+    if (currentDeps === undefined) {
+        throw new TransportError(
+            "Transport dependencies not initialized. Call setConnectorDeps() before using directConnector or createHttpProxy.",
+        );
+    }
+    return currentDeps;
+}
+
 /** Direct connection (no proxy). */
 export const directConnector: ProxyConnector = {
-    connect: (host, port) => connect({ host, port }),
+    connect: (host, port) => {
+        const { net, dns } = requireDeps();
+        return connect({ host, port, net, dns });
+    },
 };
 
 /** The bytes that terminate an HTTP header block — the end of the CONNECT response headers. */
@@ -357,7 +383,8 @@ function assertConnectSucceeded(response: string, targetHost: string, targetPort
 export function createHttpProxy(proxy: ProxyOptions): ProxyConnector {
     return {
         connect: async (targetHost, targetPort) => {
-            const transport = await connect({ host: proxy.host, port: proxy.port });
+            const { net, dns } = requireDeps();
+            const transport = await connect({ host: proxy.host, port: proxy.port, net, dns });
             const request = buildConnectRequest(targetHost, targetPort, proxy.auth);
             await transport.write(new TextEncoder().encode(request));
             const response = await readConnectResponse(transport);
