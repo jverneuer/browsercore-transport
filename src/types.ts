@@ -8,13 +8,8 @@
 import { connect } from "./connect.js";
 import { type EventEmitter } from "node:events";
 import type { LookupOneOptions } from "node:dns";
-import { createRequire } from "node:module";
 import type { SocketConnectOpts } from "node:net";
 import { TransportError } from "./errors.js";
-
-// ESM does not expose `require`. createRequire bridges the gap for the one
-// Node-builtin import (node:crypto.randomBytes) the default RandomSource needs.
-const require = createRequire(import.meta.url);
 
 /**
  * Type of the configurable DNS lookup function, injectable so tests and
@@ -257,50 +252,6 @@ export interface TransportTimers {
     clearRead(): void;
     /** Clear both timers (e.g. on socket close). */
     clearAll(): void;
-}
-
-/**
- * Source of random bytes. Abstracted so protocol layers can be tested
- * deterministically against synthetic randomness.
- */
-export interface RandomSource {
-    /** Generate `length` cryptographically-strong random bytes. */
-    randomBytes(length: number): Uint8Array;
-}
-
-/**
- * Default {@link RandomSource} backed by `node:crypto.randomBytes`.
- * Used by protocol layers unless a deterministic source is injected.
- */
-export const nodeRandomSource: RandomSource = {
-    randomBytes: (len) => {
-        // oxlint-disable-next-line no-unsafe-assignment -- require() returns any; typed locally
-        const nodeCrypto: { randomBytes: (n: number) => Uint8Array } = require("node:crypto");
-        return nodeCrypto.randomBytes(len);
-    },
-};
-
-/**
- * Deterministic {@link RandomSource} using xorshift32. Seeded repeatability
- * makes protocol-layer unit tests stable across runs — the output is NOT
- * cryptographically secure and must never be used for real keys.
- */
-export class DeterministicRandom implements RandomSource {
-    private state: number;
-    constructor(seed: number) {
-        this.state = Math.trunc(seed);
-    }
-    randomBytes(length: number): Uint8Array {
-        const out = new Uint8Array(length);
-        for (let i = 0; i < length; i++) {
-            // xorshift32
-            this.state ^= this.state << 13;
-            this.state ^= this.state >> 17;
-            this.state ^= this.state << 5;
-            out[i] = (this.state >>> 0) & 0xff;
-        }
-        return out;
-    }
 }
 
 /**

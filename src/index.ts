@@ -39,8 +39,8 @@ export {
     type TransportState,
 } from "./types.js";
 
-export { nodeRandomSource, DeterministicRandom } from "./types.js";
-export type { RandomSource } from "./types.js";
+export { nodeRandomSource, DeterministicRandom, createRandomSource } from "./random-source.js";
+export type { RandomSource } from "./random-source.js";
 
 export { assertNever } from "./utils.js";
 
