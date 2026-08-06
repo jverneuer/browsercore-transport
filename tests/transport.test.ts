@@ -8,6 +8,7 @@ import {
     TransportError,
 } from "../src/errors.js";
 import type { Transport, TransportState } from "../src/types.js";
+import { nodeNet, nodeDns, mockDns } from "./helpers.js";
 
 /**
  * A loopback TCP server on an ephemeral port that tracks every accepted socket
@@ -116,7 +117,7 @@ describe("Step 3 — read path + byte ordering", () => {
         const loopback = await LoopbackServer.create();
         try {
             const serverSock = loopback.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loopback.port });
+            const transport = await connect({ host: "127.0.0.1", port: loopback.port, net: nodeNet, dns: nodeDns });
 
             const sock = await serverSock;
             // Three distinct payloads, written in a specific order. TCP is a byte
@@ -147,7 +148,7 @@ describe("Step 4 — write path + backpressure", () => {
         const loopback = await LoopbackServer.create();
         try {
             const serverSock = loopback.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loopback.port });
+            const transport = await connect({ host: "127.0.0.1", port: loopback.port, net: nodeNet, dns: nodeDns });
 
             const sock = await serverSock;
             // Do NOT read yet — once the kernel buffer is full, the socket reports
@@ -190,6 +191,8 @@ describe("Step 5 — timeouts + error mapping", () => {
                 host: "127.0.0.1",
                 port: loopback.port,
                 idleTimeoutMs: 80,
+                net: nodeNet,
+                dns: nodeDns,
             });
             await serverSock;
 
@@ -220,6 +223,8 @@ describe("Step 5 — timeouts + error mapping", () => {
                 host: "127.0.0.1",
                 port: loopback.port,
                 readTimeoutMs: 60,
+                net: nodeNet,
+                dns: nodeDns,
             });
             await serverSock;
 
@@ -242,7 +247,7 @@ describe("Step 5 — timeouts + error mapping", () => {
         const loopback = await LoopbackServer.create();
         try {
             const serverSock = loopback.acceptOne(); // register; resolve after connect
-            const transport = await connect({ host: "127.0.0.1", port: loopback.port });
+            const transport = await connect({ host: "127.0.0.1", port: loopback.port, net: nodeNet, dns: nodeDns });
             await serverSock;
 
             // Both must resolve; the second is a no-op returning the same result.
@@ -267,7 +272,8 @@ describe("connect timeout", () => {
                 host: "192.0.2.1",
                 port: 443,
                 connectTimeoutMs: 50,
-                dnsLookup: (_name, _opts, cb) => cb(null, "192.0.2.1", 4),
+                net: nodeNet,
+                dns: mockDns("192.0.2.1", 4),
             }),
         ).rejects.toBeInstanceOf(ConnectTimeoutError);
     });
@@ -283,7 +289,7 @@ describe("Step 6 — observability seam", () => {
             // emits is "open" once the socket connects. connect() resolves on that
             // "open" state, so we capture it directly and subscribe for the rest.
             const seen: TransportState["state"][] = [];
-            const transport = await connect({ host: "127.0.0.1", port: loopback.port });
+            const transport = await connect({ host: "127.0.0.1", port: loopback.port, net: nodeNet, dns: nodeDns });
 
             // TransportId is observable and non-empty — the correlation handle.
             expect(typeof transport.id).toBe("string");
@@ -318,7 +324,7 @@ describe("remote lifecycle — error and half-close drive state", () => {
         const loopback = await LoopbackServer.create();
         try {
             loopback.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loopback.port });
+            const transport = await connect({ host: "127.0.0.1", port: loopback.port, net: nodeNet, dns: nodeDns });
 
             // A real consumer always attaches a transport-level "error" listener —
             // the transport re-emits socket errors (transport.ts ~line 177), and an
@@ -360,7 +366,7 @@ describe("remote lifecycle — error and half-close drive state", () => {
         const loopback = await LoopbackServer.create();
         try {
             const serverSock = loopback.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loopback.port });
+            const transport = await connect({ host: "127.0.0.1", port: loopback.port, net: nodeNet, dns: nodeDns });
 
             const sock = await serverSock;
             // Remote sends EOF/end without the client closing first

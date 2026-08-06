@@ -1,6 +1,6 @@
 {
     "name": "@browsercore/transport",
-    "version": "0.2.3",
+    "version": "0.2.4",
     "description": "Generic byte-stream transport abstraction (TCP sockets, DNS, backpressure). No knowledge of TLS or HTTP.",
     "repository": {
         "type": "git",
@@ -38,6 +38,9 @@
         "test": "vitest run",
         "lint": "oxlint --type-aware src/",
         "docs": "typedoc"
+    },
+    "dependencies": {
+        "@browsercore/contracts": "0.1.0"
     },
     "devDependencies": {
         "@types/node": "^26.1.2",

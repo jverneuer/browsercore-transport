@@ -1,7 +1,7 @@
 /**
  * Connection entry point for @browsercore/transport.
  *
- * `connect` is the single public way to open a transport: it mintes a
+ * `connect` is the single public way to open a transport: it mints a
  * correlation id, delegates to {@link TcpTransport.create} for DNS + socket
  * setup, and resolves once the connection is established.
  */
@@ -15,8 +15,8 @@ import { TcpTransport } from "./transport.js";
  * The single public way to open a transport: it mints a correlation id, delegates
  * to {@link TcpTransport.create} for DNS + socket setup, and resolves once the
  * connection is established. Resolves DNS (via {@link resolveHost}), opens a
- * `node:net.Socket`, wires timeouts/backpressure/idle, and resolves once the
- * connection is established.
+ * socket via the injected {@link Net} implementation, wires
+ * timeouts/backpressure/idle, and resolves once the connection is established.
  *
  * @param options - Connection target and timeout/backpressure configuration.
  *   See {@link TransportOptions} for all available options.
