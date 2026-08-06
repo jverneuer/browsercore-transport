@@ -69,7 +69,7 @@ export class TransportError extends Error {
  *     await connect({ host: "example.com", port: 443, connectTimeoutMs: 5000 });
  * } catch (e) {
  *     if (e instanceof ConnectTimeoutError) {
- *         logger.warn(`Timed out after ${e.timeoutMs}ms`);
+ *         // handle timeout...
  *     }
  * }
  * ```
