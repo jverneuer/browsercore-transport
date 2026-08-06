@@ -290,6 +290,11 @@ export function setConnectorDeps(deps: ConnectorDeps): void {
     currentDeps = deps;
 }
 
+/** Reset stored platform dependencies (tests only). */
+export function resetConnectorDeps(): void {
+    currentDeps = undefined;
+}
+
 function requireDeps(): ConnectorDeps {
     if (currentDeps === undefined) {
         throw new TransportError(
