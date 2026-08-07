@@ -40,7 +40,7 @@
         "docs": "typedoc"
     },
     "dependencies": {
-        "@browsercore/contracts": "^0.1.4"
+        "@browsercore/contracts": "0.2.0"
     },
     "devDependencies": {
         "@types/node": "^26.1.2",
