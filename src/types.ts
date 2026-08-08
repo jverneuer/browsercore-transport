@@ -7,7 +7,6 @@
  * this package imports only interfaces from @browsercore/contracts.
  */
 
-import { connect } from "./connect.js";
 import { type EventEmitter } from "node:events";
 import type { Net, DnsResolver } from "@browsercore/contracts";
 
