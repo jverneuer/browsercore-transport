@@ -26,19 +26,19 @@ import type { EventProvider, TypedEventEmitter } from "@browsercore/contracts";
 class TypedEventEmitterImpl<T extends Record<string, (...args: readonly unknown[]) => void>> implements TypedEventEmitter<T> {
     constructor(private readonly events: EventProvider) {}
 
-    on<K extends keyof T>(event: K, listener: T[K]): this {
+    on<K extends keyof T>(event: K, listener: T[K]): void {
+        // The injected EventProvider's on()/once()/off() may return `this`
+        // (chainable) per @browsercore/contracts — call without leaking that
+        // chainable return into a void context (backend is swappable).
         this.events.on(event as string, listener as (...args: readonly unknown[]) => void);
-        return this;
     }
 
-    once<K extends keyof T>(event: K, listener: T[K]): this {
+    once<K extends keyof T>(event: K, listener: T[K]): void {
         this.events.once(event as string, listener as (...args: readonly unknown[]) => void);
-        return this;
     }
 
-    off<K extends keyof T>(event: K, listener: T[K]): this {
+    off<K extends keyof T>(event: K, listener: T[K]): void {
         this.events.off(event as string, listener as (...args: readonly unknown[]) => void);
-        return this;
     }
 
     removeListener<K extends keyof T>(event: K, listener: T[K]): this {
