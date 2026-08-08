@@ -1,5 +1,43 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTypedEventEmitter } from "../src/events.js";
+import type { EventProvider } from "@browsercore/contracts";
+
+/** Minimal EventProvider mock for testing the typed emitter surface. */
+function createMockEventProvider(): EventProvider {
+    const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+    return {
+        on(event, listener) {
+            if (!listeners.has(event)) listeners.set(event, new Set());
+            listeners.get(event)!.add(listener);
+        },
+        once(event, listener) {
+            const wrapped = (...args: unknown[]) => {
+                this.off(event, wrapped);
+                listener(...args);
+            };
+            this.on(event, wrapped);
+        },
+        off(event, listener) {
+            listeners.get(event)?.delete(listener);
+        },
+        removeListener(event, listener) {
+            listeners.get(event)?.delete(listener);
+        },
+        emit(event, ...args) {
+            const set = listeners.get(event);
+            if (!set || set.size === 0) return false;
+            for (const l of set) l(...args);
+            return true;
+        },
+        listenerCount(event) {
+            return listeners.get(event)?.size ?? 0;
+        },
+        removeAllListeners(event) {
+            if (event) listeners.delete(event);
+            else listeners.clear();
+        },
+    };
+}
 
 /**
  * Event map shared across the tests. Mirrors the kind of shape higher layers
@@ -15,7 +53,7 @@ type TestEvents = {
 describe("TypedEventEmitter", () => {
     describe("on / emit", () => {
         it("delivers an emitted event to a registered listener", () => {
-            const emitter = createTypedEventEmitter<TestEvents>();
+            const emitter = createTypedEventEmitter<TestEvents>(createMockEventProvider());
             const onConnect = vi.fn();
             emitter.on("connect", onConnect);
             emitter.emit("connect");
@@ -23,7 +61,7 @@ describe("TypedEventEmitter", () => {
         });
 
         it("delivers the exact arguments a listener declares", () => {
-            const emitter = createTypedEventEmitter<TestEvents>();
+            const emitter = createTypedEventEmitter<TestEvents>(createMockEventProvider());
             const onData = vi.fn();
             emitter.on("data", onData);
             emitter.emit("data", "hello");
@@ -35,7 +73,7 @@ describe("TypedEventEmitter", () => {
         });
 
         it("delivers Error-typed arguments to an error listener", () => {
-            const emitter = createTypedEventEmitter<TestEvents>();
+            const emitter = createTypedEventEmitter<TestEvents>(createMockEventProvider());
             const onError = vi.fn();
             const err = new Error("boom");
             emitter.on("error", onError);
@@ -47,7 +85,7 @@ describe("TypedEventEmitter", () => {
         });
 
         it("invokes all listeners registered for the same event, in order", () => {
-            const emitter = createTypedEventEmitter<TestEvents>();
+            const emitter = createTypedEventEmitter<TestEvents>(createMockEventProvider());
             const calls: number[] = [];
             const first = vi.fn(() => calls.push(1));
             const second = vi.fn(() => calls.push(2));
@@ -60,7 +98,7 @@ describe("TypedEventEmitter", () => {
         });
 
         it("does not invoke listeners registered for other events", () => {
-            const emitter = createTypedEventEmitter<TestEvents>();
+            const emitter = createTypedEventEmitter<TestEvents>(createMockEventProvider());
             const onConnect = vi.fn();
             const onData = vi.fn();
             emitter.on("connect", onConnect);
@@ -71,7 +109,7 @@ describe("TypedEventEmitter", () => {
         });
 
         it("returns true when the event has listeners, false otherwise", () => {
-            const emitter = createTypedEventEmitter<TestEvents>();
+            const emitter = createTypedEventEmitter<TestEvents>(createMockEventProvider());
             // No listeners yet.
             expect(emitter.emit("connect")).toBe(false);
             const onConnect = vi.fn();
@@ -82,7 +120,7 @@ describe("TypedEventEmitter", () => {
 
     describe("off / removeListener", () => {
         it("off() removes a specific listener", () => {
-            const emitter = createTypedEventEmitter<TestEvents>();
+            const emitter = createTypedEventEmitter<TestEvents>(createMockEventProvider());
             const keep = vi.fn();
             const drop = vi.fn();
             emitter.on("connect", keep);
@@ -94,7 +132,7 @@ describe("TypedEventEmitter", () => {
         });
 
         it("removeListener() is an alias for off()", () => {
-            const emitter = createTypedEventEmitter<TestEvents>();
+            const emitter = createTypedEventEmitter<TestEvents>(createMockEventProvider());
             const keep = vi.fn();
             const drop = vi.fn();
             emitter.on("data", keep);
@@ -108,7 +146,7 @@ describe("TypedEventEmitter", () => {
         });
 
         it("off() for a listener that was never registered is a no-op", () => {
-            const emitter = createTypedEventEmitter<TestEvents>();
+            const emitter = createTypedEventEmitter<TestEvents>(createMockEventProvider());
             const registered = vi.fn();
             const neverRegistered = vi.fn();
             emitter.on("connect", registered);
@@ -119,7 +157,7 @@ describe("TypedEventEmitter", () => {
         });
 
         it("removing a listener does not affect other events", () => {
-            const emitter = createTypedEventEmitter<TestEvents>();
+            const emitter = createTypedEventEmitter<TestEvents>(createMockEventProvider());
             const onConnect = vi.fn();
             const onData = vi.fn();
             emitter.on("connect", onConnect);
@@ -133,7 +171,7 @@ describe("TypedEventEmitter", () => {
 
     describe("once", () => {
         it("fires exactly once, then auto-removes the listener", () => {
-            const emitter = createTypedEventEmitter<TestEvents>();
+            const emitter = createTypedEventEmitter<TestEvents>(createMockEventProvider());
             const onConnect = vi.fn();
             emitter.once("connect", onConnect);
             emitter.emit("connect");
@@ -143,7 +181,7 @@ describe("TypedEventEmitter", () => {
         });
 
         it("delivers arguments on the single firing", () => {
-            const emitter = createTypedEventEmitter<TestEvents>();
+            const emitter = createTypedEventEmitter<TestEvents>(createMockEventProvider());
             const onData = vi.fn();
             emitter.once("data", onData);
             emitter.emit("data", "one");

@@ -10,8 +10,7 @@
  * runtime-agnostic (Node, Bun, Deno, Cloudflare Workers, mocks).
  */
 
-import type { Socket } from "@browsercore/contracts";
-import { EventEmitter } from "node:events";
+import type { EventProvider, Socket } from "@browsercore/contracts";
 import type {
     CloseReason,
     Deferred,
@@ -56,8 +55,9 @@ const DEFAULT_NO_DELAY = true;
  * @see connect for the factory entry point.
  * @since 0.1.0
  */
-export class TcpTransport extends EventEmitter implements Transport {
+export class TcpTransport implements Transport {
     public readonly id: TransportId;
+    private readonly events: EventProvider;
     // `_state` is the one exception to the no-underscore rule: the public
     // `get state()` getter (required by the Transport interface) already
     // claims the name `state`, so the backing field keeps a trailing marker.
@@ -67,6 +67,38 @@ export class TcpTransport extends EventEmitter implements Transport {
     private pendingRead: Deferred<Uint8Array> | undefined;
     private timers!: TransportTimers;
     private drain!: DrainQueue;
+
+    // -------------------------------------------------------------------------
+    // EventProvider delegation — decouples the transport from node:events.
+    // -------------------------------------------------------------------------
+
+    public on(event: string, listener: (...args: unknown[]) => void): void {
+        this.events.on(event, listener);
+    }
+
+    public once(event: string, listener: (...args: unknown[]) => void): void {
+        this.events.once(event, listener);
+    }
+
+    public off(event: string, listener: (...args: unknown[]) => void): void {
+        this.events.off(event, listener);
+    }
+
+    public removeListener(event: string, listener: (...args: unknown[]) => void): void {
+        this.events.removeListener(event, listener);
+    }
+
+    public emit(event: string, ...args: unknown[]): boolean {
+        return this.events.emit(event, ...args);
+    }
+
+    public listenerCount(event: string): number {
+        return this.events.listenerCount(event);
+    }
+
+    public removeAllListeners(event?: string): void {
+        this.events.removeAllListeners(event);
+    }
 
     /** Current lifecycle state (read-only through this getter). */
     public get state(): TransportState {
@@ -90,7 +122,12 @@ export class TcpTransport extends EventEmitter implements Transport {
      * @since 0.1.0
      */
     public static create(id: TransportId, options: TransportOptions): Promise<TcpTransport> {
-        const transport = new TcpTransport(id);
+        if (!options.events) {
+            throw new TransportError(
+                "TcpTransport.create requires an injected EventProvider (options.events)",
+            );
+        }
+        const transport = new TcpTransport(id, options.events);
         return transport._establish(options).then(() => transport);
     }
 
@@ -98,10 +135,11 @@ export class TcpTransport extends EventEmitter implements Transport {
      * Private constructor — instances are created via {@link TcpTransport.create}.
      *
      * @param id - Opaque correlation id assigned to the transport.
+     * @param events - Injected EventProvider backend (decouples from node:events).
      */
-    private constructor(id: TransportId) {
-        super();
+    private constructor(id: TransportId, events: EventProvider) {
         this.id = id;
+        this.events = events;
     }
 
     /**

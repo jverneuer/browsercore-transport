@@ -7,8 +7,7 @@
  * this package imports only interfaces from @browsercore/contracts.
  */
 
-import { type EventEmitter } from "node:events";
-import type { Net, DnsResolver } from "@browsercore/contracts";
+import type { EventProvider, Net, DnsResolver } from "@browsercore/contracts";
 
 /**
  * Branded transport connection identifier.
@@ -100,6 +99,15 @@ export interface TransportOptions {
      * entrypoint (e.g. browsersmith passes the Node adapter).
      */
     readonly dns: DnsResolver;
+    /**
+     * Platform-provided event provider. Injected by the application
+     * entrypoint (e.g. browsersmith passes the Node EventEmitter-backed
+     * provider). Decouples the transport from node:events.
+     *
+     * Required — this package provides no fallback. Inject the runtime
+     * EventProvider via the composition root (browsersmith).
+     */
+    readonly events?: EventProvider;
 }
 
 /** A resolved address, returned by the DNS resolution step. */
@@ -115,7 +123,7 @@ export interface ResolvedAddress {
  *
  * A reliable, ordered byte stream over TCP with no knowledge of TLS or HTTP.
  */
-export interface Transport extends EventEmitter {
+export interface Transport extends EventProvider {
     /** Opaque identifier for logging / correlation. */
     readonly id: TransportId;
     /** Current lifecycle state. */
