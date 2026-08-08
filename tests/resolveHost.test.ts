@@ -22,6 +22,18 @@ describe("resolveHost", () => {
         );
     });
 
+    it("rejects with DnsResolutionError when the lookup returns an empty array", async () => {
+        const emptyDns = {
+            lookup(_hostname: string, _family: 4 | 6) {
+                return Promise.resolve([]);
+            },
+        };
+
+        await expect(resolveHost("example.com", false, emptyDns)).rejects.toThrow(
+            DnsResolutionError,
+        );
+    });
+
     it("falls back to the requested family when the lookup reports none (B78)", async () => {
         // Some lookup implementations call back with resolvedFamily=0/null/undefined
         // when they cannot determine the family. The `resolvedFamily || family`

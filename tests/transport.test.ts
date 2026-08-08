@@ -387,3 +387,29 @@ describe("remote lifecycle — error and half-close drive state", () => {
         }
     });
 });
+
+describe("connect timeout", () => {
+    it("rejects with ConnectTimeoutError when the TCP handshake never completes", async () => {
+        // A mock Net whose socket never fires "connect" — forces the connect
+        // timer to fire (transport.ts ~line 146).
+        const { EventEmitter } = await import("node:events");
+        const neverConnectingNet = {
+            connect(_options: unknown) {
+                const socket = new EventEmitter();
+                // Override destroy so the timeout path doesn't throw.
+                socket.destroy = () => {};
+                return socket as never;
+            },
+        };
+
+        await expect(
+            connect({
+                host: "192.0.2.1", // TEST-NET, should never connect
+                port: 12345,
+                connectTimeoutMs: 50,
+                net: neverConnectingNet,
+                dns: mockDns("192.0.2.1", 4),
+            }),
+        ).rejects.toBeInstanceOf(ConnectTimeoutError);
+    });
+});
