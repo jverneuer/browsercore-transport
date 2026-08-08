@@ -69,7 +69,8 @@ export class TcpTransport implements Transport {
     private drain!: DrainQueue;
 
     // -------------------------------------------------------------------------
-    // EventProvider delegation — decouples the transport from node:events.
+    // EventProvider delegation — decouples the transport from any specific
+    // runtime event system.
     // -------------------------------------------------------------------------
 
     public on(event: string, listener: (...args: unknown[]) => void): void {
@@ -135,7 +136,8 @@ export class TcpTransport implements Transport {
      * Private constructor — instances are created via {@link TcpTransport.create}.
      *
      * @param id - Opaque correlation id assigned to the transport.
-     * @param events - Injected EventProvider backend (decouples from node:events).
+     * @param events - Injected EventProvider backend (decouples from any
+     *   specific runtime event system).
      */
     private constructor(id: TransportId, events: EventProvider) {
         this.id = id;

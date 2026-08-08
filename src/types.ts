@@ -101,8 +101,8 @@ export interface TransportOptions {
     readonly dns: DnsResolver;
     /**
      * Platform-provided event provider. Injected by the application
-     * entrypoint (e.g. browsersmith passes the Node EventEmitter-backed
-     * provider). Decouples the transport from node:events.
+     * entrypoint (e.g. browsersmith passes the runtime EventProvider).
+     * Decouples the transport from any specific runtime event system.
      *
      * Required — this package provides no fallback. Inject the runtime
      * EventProvider via the composition root (browsersmith).

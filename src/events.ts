@@ -4,7 +4,7 @@
  * The public type {@link TypedEventEmitter} is re-exported from
  * @browsercore/contracts (single source of truth). The implementation
  * delegates to an injected {@link EventProvider} so the backend is swappable
- * (Node EventEmitter, EventTarget, mock) without changing consumer code.
+ * (EventTarget, mock) without changing consumer code.
  *
  * @module
  */
@@ -59,7 +59,7 @@ class TypedEventEmitterImpl<T extends Record<string, (...args: readonly unknown[
  * emitter can be swapped without changing consumer code.
  *
  * @template T - A map from event names to listener function signatures.
- * @param events - The EventProvider backend (e.g. Node EventEmitter, EventTarget).
+ * @param events - The EventProvider backend (e.g. EventTarget, mock).
  * @returns A typed event emitter instance.
  */
 export function createTypedEventEmitter<T extends Record<string, (...args: readonly unknown[]) => void>>(
