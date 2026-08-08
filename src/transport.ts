@@ -122,7 +122,12 @@ export class TcpTransport implements Transport {
      * @since 0.1.0
      */
     public static create(id: TransportId, options: TransportOptions): Promise<TcpTransport> {
-        const transport = new TcpTransport(id, options.events ?? createSimpleEventProvider());
+        if (!options.events) {
+            throw new TransportError(
+                "TcpTransport.create requires an injected EventProvider (options.events)",
+            );
+        }
+        const transport = new TcpTransport(id, options.events);
         return transport._establish(options).then(() => transport);
     }
 
@@ -431,44 +436,3 @@ export class TcpTransport implements Transport {
 // resolveHost lives in its own module; re-exported here so the barrel keeps
 // surfacing it from a single, stable module path.
 export { resolveHost };
-
-/**
- * Minimal in-memory EventProvider — the zero-dependency default when no
- * provider is injected. Keeps this package free of node:events while the
- * production path injects a Node EventEmitter-backed provider via Platform.
- */
-function createSimpleEventProvider(): EventProvider {
-    const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
-    return {
-        on(event, listener) {
-            if (!listeners.has(event)) listeners.set(event, new Set());
-            listeners.get(event)!.add(listener);
-        },
-        once(event, listener) {
-            const wrapped = (...args: unknown[]) => {
-                listeners.get(event)?.delete(wrapped);
-                listener(...args);
-            };
-            this.on(event, wrapped);
-        },
-        off(event, listener) {
-            listeners.get(event)?.delete(listener);
-        },
-        removeListener(event, listener) {
-            listeners.get(event)?.delete(listener);
-        },
-        emit(event, ...args) {
-            const set = listeners.get(event);
-            if (!set || set.size === 0) return false;
-            for (const l of [...set]) l(...args);
-            return true;
-        },
-        listenerCount(event) {
-            return listeners.get(event)?.size ?? 0;
-        },
-        removeAllListeners(event) {
-            if (event) listeners.delete(event);
-            else listeners.clear();
-        },
-    };
-}

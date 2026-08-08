@@ -103,7 +103,9 @@ export interface TransportOptions {
      * Platform-provided event provider. Injected by the application
      * entrypoint (e.g. browsersmith passes the Node EventEmitter-backed
      * provider). Decouples the transport from node:events.
-     * @defaultValue a Node EventEmitter (transitional; inject via Platform)
+     *
+     * Required — this package provides no fallback. Inject the runtime
+     * EventProvider via the composition root (browsersmith).
      */
     readonly events?: EventProvider;
 }
