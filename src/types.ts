@@ -295,7 +295,7 @@ export function resetConnectorDeps(): void {
     currentDeps = undefined;
 }
 
-function requireDeps(): ConnectorDeps {
+export function requireDeps(): ConnectorDeps {
     if (currentDeps === undefined) {
         throw new TransportError(
             "Transport dependencies not initialized. Call setConnectorDeps() before using directConnector or createHttpProxy.",
