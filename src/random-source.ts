@@ -2,7 +2,7 @@
  * Randomness providers for @browsercore/transport.
  *
  * Abstracted so protocol layers can be tested deterministically against
- * synthetic randomness. The default {@link nodeRandomSource} is backed by
+ * synthetic randomness. The default source is backed by
  * `node:crypto.randomBytes`; {@link DeterministicRandom} is a seeded xorshift32
  * used for repeatable unit tests (NOT cryptographically secure).
  */
@@ -17,14 +17,6 @@ export interface RandomSource {
     /** Generate `length` cryptographically-strong random bytes. */
     randomBytes(length: number): Uint8Array;
 }
-
-/**
- * Default {@link RandomSource} backed by `node:crypto.randomBytes`.
- * Used by protocol layers unless a deterministic source is injected.
- */
-export const nodeRandomSource: RandomSource = {
-    randomBytes: (len) => randomBytes(len),
-};
 
 /**
  * Deterministic {@link RandomSource} using xorshift32. Seeded repeatability
@@ -50,9 +42,12 @@ export class DeterministicRandom implements RandomSource {
 }
 
 /**
- * Factory that returns the default {@link RandomSource}. Centralizes the
- * choice of default so callers can swap the implementation in one place.
+ * Factory that returns the default {@link RandomSource} backed by
+ * `node:crypto.randomBytes`. Centralizes the choice of default so callers
+ * can swap the implementation in one place.
  */
 export function createRandomSource(): RandomSource {
-    return nodeRandomSource;
+    return {
+        randomBytes: (len) => randomBytes(len),
+    };
 }
