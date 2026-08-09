@@ -4,6 +4,7 @@ import { connect } from "../src/connect.js";
 import { TcpTransport } from "../src/transport.js";
 import type { TransportId } from "../src/types.js";
 import { nodeNet, nodeDns, mockDns } from "./helpers.js";
+import { createMockEventProvider } from "./test-helpers.js";
 
 /**
  * Minimal loopback TCP server on an ephemeral port. Accepted sockets get a
@@ -49,7 +50,13 @@ describe("connect", () => {
     it("returns a TcpTransport in the 'open' state once connected", async () => {
         const loop = await Loopback.create();
         try {
-            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
+            const transport = await connect({
+                host: "127.0.0.1",
+                port: loop.port,
+                net: nodeNet,
+                dns: nodeDns,
+                events: createMockEventProvider(),
+            });
             expect(transport).toBeInstanceOf(TcpTransport);
             expect(transport.state.state).toBe("open");
             await transport.close();
@@ -63,7 +70,13 @@ describe("connect", () => {
         // verify the shape of the correlation handle rather than its uniqueness.
         const loop = await Loopback.create();
         try {
-            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
+            const transport = await connect({
+                host: "127.0.0.1",
+                port: loop.port,
+                net: nodeNet,
+                dns: nodeDns,
+                events: createMockEventProvider(),
+            });
             const id = transport.id as TransportId;
             expect(typeof id).toBe("string");
             expect(id.startsWith("transport_")).toBe(true);
@@ -88,6 +101,7 @@ describe("connect", () => {
                 port: loop.port,
                 net: nodeNet,
                 dns: mockDns("127.0.0.1", 4),
+                events: createMockEventProvider(),
             });
             expect(transport.state.state).toBe("open");
             await transport.close();
@@ -110,6 +124,7 @@ describe("connect", () => {
                 ipv6: false,
                 net: nodeNet,
                 dns: nodeDns,
+                events: createMockEventProvider(),
             });
             expect(transport.state.state).toBe("open");
             await transport.close();
@@ -129,6 +144,7 @@ describe("connect", () => {
                 connectTimeoutMs: 50,
                 net: nodeNet,
                 dns: mockDns("192.0.2.1", 4),
+                events: createMockEventProvider(),
             }),
         ).rejects.toThrow(/timed out after 50ms/);
     });
@@ -144,6 +160,7 @@ describe("TcpTransport.create", () => {
                 port: loop.port,
                 net: nodeNet,
                 dns: nodeDns,
+                events: createMockEventProvider(),
             });
             expect(transport).toBeInstanceOf(TcpTransport);
             expect(transport.id).toBe(id);

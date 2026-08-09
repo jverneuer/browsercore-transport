@@ -1,33 +1,32 @@
 /**
  * Tests for random-source.ts — the RandomSource abstraction.
  *
- * Covers the default node-backed source, the deterministic test source,
+ * Covers the factory-backed default source, the deterministic test source,
  * and the factory function.
  */
 
 import { describe, expect, it } from "vitest";
 import {
-    nodeRandomSource,
     DeterministicRandom,
     createRandomSource,
 } from "../src/random-source.js";
 
-describe("nodeRandomSource", () => {
+describe("createRandomSource (default)", () => {
     it("returns a Uint8Array of the requested length", () => {
-        const bytes = nodeRandomSource.randomBytes(32);
+        const bytes = createRandomSource().randomBytes(32);
         expect(bytes).toBeInstanceOf(Uint8Array);
         expect(bytes.length).toBe(32);
     });
 
     it("returns different bytes on successive calls", () => {
-        const a = nodeRandomSource.randomBytes(16);
-        const b = nodeRandomSource.randomBytes(16);
+        const a = createRandomSource().randomBytes(16);
+        const b = createRandomSource().randomBytes(16);
         // Two random 16-byte buffers should not be equal (2^-128 chance of collision).
         expect(Buffer.from(a).equals(Buffer.from(b))).toBe(false);
     });
 
     it("handles zero-length request", () => {
-        const bytes = nodeRandomSource.randomBytes(0);
+        const bytes = createRandomSource().randomBytes(0);
         expect(bytes.length).toBe(0);
     });
 });
@@ -70,14 +69,15 @@ describe("DeterministicRandom", () => {
 });
 
 describe("createRandomSource", () => {
-    it("returns the node-backed default source", () => {
-        const source = createRandomSource();
-        expect(source).toBe(nodeRandomSource);
-    });
-
-    it("returned source produces random bytes", () => {
+    it("returns a source that produces random bytes", () => {
         const source = createRandomSource();
         const bytes = source.randomBytes(8);
         expect(bytes.length).toBe(8);
+    });
+
+    it("each call returns a fresh source instance", () => {
+        const a = createRandomSource();
+        const b = createRandomSource();
+        expect(a).not.toBe(b);
     });
 });

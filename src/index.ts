@@ -39,13 +39,13 @@ export {
     type TransportState,
 } from "./types.js";
 
-export { nodeRandomSource, DeterministicRandom, createRandomSource } from "./random-source.js";
+export { DeterministicRandom, createRandomSource } from "./random-source.js";
 export type { RandomSource } from "./random-source.js";
 
 export { assertNever } from "./utils.js";
 
 export { createTypedEventEmitter } from "./events.js";
-export type { TypedEventEmitter } from "./events.js";
+export type { TypedEventEmitter } from "@browsercore/contracts";
 
 // Re-export platform-agnostic contracts for convenience — consumers can pull
 // Net/Socket/DnsResolver from here without importing @browsercore/contracts.

@@ -4,6 +4,7 @@ import { connect } from "../src/index.js";
 import { TransportError } from "../src/errors.js";
 import type { Transport, TransportState } from "../src/types.js";
 import { nodeNet, nodeDns } from "./helpers.js";
+import { createMockEventProvider } from "./test-helpers.js";
 
 /**
  * Minimal loopback TCP server on an ephemeral port. Every accepted socket gets
@@ -85,7 +86,7 @@ describe("read path — buffered data", () => {
         const loop = await Loopback.create();
         try {
             const serverSock = loop.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
+            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
             const sock = await serverSock;
 
             sock.write(Buffer.from([0x01, 0x02, 0x03]));
@@ -109,7 +110,7 @@ describe("write path — kernel-accepted and error paths", () => {
         const loop = await Loopback.create();
         try {
             const serverSock = loop.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
+            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
             const sock = await serverSock;
 
             const payload = Uint8Array.of(0xde, 0xad, 0xbe, 0xef);
@@ -129,7 +130,7 @@ describe("write path — kernel-accepted and error paths", () => {
         const loop = await Loopback.create();
         try {
             loop.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
+            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
             const socket = socketOf(transport) as Socket & {
                 write: (...args: unknown[]) => unknown;
             };
@@ -160,7 +161,7 @@ describe("write path — kernel-accepted and error paths", () => {
         const loop = await Loopback.create();
         try {
             loop.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
+            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
             const wb = transport as unknown as { socket: Socket | undefined };
             const real = wb.socket;
             wb.socket = undefined;
@@ -182,7 +183,7 @@ describe("write path — kernel-accepted and error paths", () => {
         const loop = await Loopback.create();
         try {
             loop.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
+            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
             const socket = socketOf(transport) as Socket & {
                 write: (...args: unknown[]) => unknown;
             };
@@ -220,7 +221,7 @@ describe("write path — kernel-accepted and error paths", () => {
         const loop = await Loopback.create();
         try {
             loop.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
+            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
             transport.on("error", () => {});
             transport.on("close", () => {});
             const socket = socketOf(transport) as Socket & {
@@ -260,7 +261,7 @@ describe("write path — kernel-accepted and error paths", () => {
         const loop = await Loopback.create();
         try {
             const serverSock = loop.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
+            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
             transport.on("error", () => {}); // swallow re-emitted socket error
             const sock = await serverSock;
             sock.pause(); // keep the kernel buffer full → backpressure
@@ -286,7 +287,7 @@ describe("ensureOpen — guards against non-open states", () => {
         const loop = await Loopback.create();
         try {
             loop.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
+            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
             await transport.close();
             expect(transport.state.state).toBe("closed");
             expect(() => transport.write(Uint8Array.of(1))).toThrow(TransportError);
@@ -302,7 +303,7 @@ describe("ensureOpen — guards against non-open states", () => {
         const loop = await Loopback.create();
         try {
             const serverSock = loop.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
+            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
             await serverSock;
 
             const closePromise = transport.close();
@@ -322,7 +323,7 @@ describe("ensureOpen — guards against non-open states", () => {
         const loop = await Loopback.create();
         try {
             loop.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
+            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
             (transport as unknown as { _state: unknown })._state = { state: "bogus" };
             expect(() => transport.write(Uint8Array.of(1))).toThrow(/Unexpected value/);
             expect(() => transport.read()).toThrow(/Unexpected value/);
@@ -339,7 +340,7 @@ describe("ensureOpen — guards against non-open states", () => {
         const loop = await Loopback.create();
         try {
             loop.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
+            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
             const wb = transport as unknown as { _state: TransportState };
             wb._state = { state: "connecting" };
 
@@ -363,7 +364,7 @@ describe("close — lifecycle edges", () => {
         const loop = await Loopback.create();
         try {
             loop.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
+            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
             const socket = socketOf(transport);
             socket.destroy();
             expect(socket.destroyed).toBe(true);
@@ -381,7 +382,7 @@ describe("close — lifecycle edges", () => {
         const loop = await Loopback.create();
         try {
             loop.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
+            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
             const reason = { kind: "error" as const, error: new Error("application") };
             await transport.close(reason);
             expect(transport.state.state).toBe("closed");
@@ -403,7 +404,7 @@ describe("remote lifecycle — close-with-error mapping", () => {
         const loop = await Loopback.create();
         try {
             loop.acceptOne();
-            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns });
+            const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
             transport.on("error", () => {});
             transport.on("close", () => {});
 
@@ -436,6 +437,7 @@ describe("idle timer — reset on data flow", () => {
                 idleTimeoutMs: 180,
                 net: nodeNet,
                 dns: nodeDns,
+                events: createMockEventProvider(),
             });
             const sock = await serverSock;
 
