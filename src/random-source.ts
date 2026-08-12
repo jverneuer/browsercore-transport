@@ -2,12 +2,12 @@
  * Randomness providers for @browsercore/transport.
  *
  * Abstracted so protocol layers can be tested deterministically against
- * synthetic randomness. The default source is backed by
- * `node:crypto.randomBytes`; {@link DeterministicRandom} is a seeded xorshift32
- * used for repeatable unit tests (NOT cryptographically secure).
+ * synthetic randomness. The default source is backed by the Web Crypto API
+ * (`globalThis.crypto.getRandomValues`), which is available in every modern
+ * runtime (Node 20+, browsers, Deno, Bun, Workers) without a `node:` import;
+ * {@link DeterministicRandom} is a seeded xorshift32 used for repeatable unit
+ * tests (NOT cryptographically secure).
  */
-
-import { randomBytes } from "node:crypto";
 
 /**
  * Source of random bytes. Abstracted so protocol layers can be tested
@@ -42,12 +42,23 @@ export class DeterministicRandom implements RandomSource {
 }
 
 /**
- * Factory that returns the default {@link RandomSource} backed by
- * `node:crypto.randomBytes`. Centralizes the choice of default so callers
- * can swap the implementation in one place.
+ * Factory that returns the default {@link RandomSource} backed by the Web
+ * Crypto API (`globalThis.crypto.getRandomValues`). Centralizes the choice of
+ * default so callers can swap the implementation in one place.
  */
 export function createRandomSource(): RandomSource {
     return {
-        randomBytes: (len) => randomBytes(len),
+        // Web Crypto's getRandomValues accepts at most 65 536 bytes per call
+        // (per the WHATWG spec); loop in chunks so arbitrary lengths work.
+        randomBytes: (len: number): Uint8Array => {
+            const out = new Uint8Array(len);
+            const limit = 65_536;
+            for (let offset = 0; offset < len; offset += limit) {
+                globalThis.crypto.getRandomValues(
+                    out.subarray(offset, Math.min(offset + limit, len)),
+                );
+            }
+            return out;
+        },
     };
 }
