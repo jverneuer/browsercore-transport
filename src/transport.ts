@@ -15,6 +15,7 @@ import type {
     CloseReason,
     Deferred,
     DrainQueue,
+    ResolvedAddress,
     Transport,
     TransportId,
     TransportOptions,
@@ -26,11 +27,20 @@ import { assertNever } from "./utils.js";
 import { createDeferred } from "./deferred.js";
 import { createDrainQueue } from "./drain.js";
 import { createTransportTimers } from "./timers.js";
-import { resolveHost } from "./resolve.js";
+import { resolveHost, resolveHostCandidates } from "./resolve.js";
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 const DEFAULT_IPV6 = true;
 const DEFAULT_NO_DELAY = true;
+/**
+ * Per-attempt connect cap for every candidate EXCEPT the last one. When the
+ * first candidate is unreachable at the network level (e.g. an AAAA route that
+ * black-holes SYN packets), waiting out the full connect timeout before trying
+ * the next family would make the fallback useless in practice — real stacks
+ * (Chrome, Node's autoSelectFamily) cap each non-final attempt at a few
+ * hundred milliseconds. The final candidate gets the remaining budget.
+ */
+const FALLBACK_ATTEMPT_TIMEOUT_MS = 300;
 
 /**
  * Concrete transport implementation over an injected {@link Net} socket.
@@ -161,7 +171,12 @@ export class TcpTransport implements Transport {
         const ipv6 = options.ipv6 ?? DEFAULT_IPV6;
         const noDelay = options.noDelay ?? DEFAULT_NO_DELAY;
 
-        const resolved = await resolveHost(options.host, ipv6, options.dns);
+        // Resolve BOTH families up front, preferred family first, so a failed
+        // or unreachable first candidate can fall back to the other one. A
+        // single-family resolver made the caller's connectivity hinge on one
+        // address: hosts without an AAAA record failed outright under an IPv6
+        // preference, and AAAA routes that black-hole could never fall back.
+        const candidates = await resolveHostCandidates(options.host, ipv6, options.dns);
 
         // Timers and the backpressure queue are created here (not the
         // constructor) because their configuration derives from `options`.
@@ -178,27 +193,90 @@ export class TcpTransport implements Transport {
         });
         this.drain = createDrainQueue();
 
+        // Happy-eyeballs-style sequential fallback: every candidate except the
+        // last gets a short per-attempt cap; the final candidate gets the rest
+        // of the connect budget so a single-candidate resolution behaves
+        // exactly like the historical full-timeout path.
+        const deadlineMs = Date.now() + connectTimeoutMs;
+        let lastError: Error = new TransportError("no resolved addresses");
+        for (let i = 0; i < candidates.length; i++) {
+            const isLast = i === candidates.length - 1;
+            const remaining = deadlineMs - Date.now();
+            const attemptTimeoutMs = isLast
+                ? Math.max(remaining, 1)
+                : Math.min(Math.max(remaining, 1), FALLBACK_ATTEMPT_TIMEOUT_MS);
+            try {
+                const candidate = candidates[i];
+                if (candidate === undefined) {
+                    break;
+                }
+                // oxlint-disable-next-line no-await-in-loop -- fallback attempts must run in order; each starts only if the previous failed
+                await this._openSocket(options, candidate, noDelay, attemptTimeoutMs);
+                return;
+            } catch (err) {
+                lastError = err instanceof Error ? err : new Error(String(err));
+                if (Date.now() >= deadlineMs) {
+                    break;
+                }
+            }
+        }
+        throw lastError;
+    }
+
+    /**
+     * Open a socket to one resolved candidate and wait for the TCP handshake.
+     *
+     * Wires the full session event surface (`data`, `drain`, `end`, `error`,
+     * `close`) once the socket connects. On a failed attempt the socket is
+     * detached (listeners removed, destroyed) so the caller can retry with the
+     * next candidate without stale handlers firing.
+     *
+     * @param options - Connection configuration (net adapter, local address).
+     * @param candidate - The resolved address to connect to.
+     * @param noDelay - Whether to disable Nagle's algorithm.
+     * @param timeoutMs - Connect budget for THIS attempt.
+     */
+    private _openSocket(
+        options: TransportOptions,
+        candidate: ResolvedAddress,
+        noDelay: boolean,
+        timeoutMs: number,
+    ): Promise<void> {
         return new Promise<void>((resolve, reject) => {
+            let settled = false;
+            let connected = false;
             const socket = options.net.connect({
-                host: resolved.address,
+                host: candidate.address,
                 port: options.port,
                 noDelay,
                 ...(options.localAddress === undefined ? {} : { localAddress: options.localAddress }),
-                family: resolved.family,
+                family: candidate.family,
             });
             this.socket = socket;
 
-            const connectTimer = setTimeout(() => {
-                const err = new ConnectTimeoutError(options.host, options.port, connectTimeoutMs);
+            const fail = (err: Error): void => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                clearTimeout(connectTimer);
+                // Handlers on a never-connected socket are all guarded by the
+                // settled/connected flags, so the dead attempt's events cannot
+                // fire session behavior or state transitions after destroy().
                 socket.destroy(err);
-                this.transition({ state: "closed", reason: { kind: "timeout", afterMs: connectTimeoutMs } });
                 reject(err);
-            }, connectTimeoutMs);
+            };
+
+            const connectTimer = setTimeout(() => {
+                fail(new ConnectTimeoutError(options.host, options.port, timeoutMs));
+            }, timeoutMs);
 
             socket.once("connect", () => {
+                connected = true;
                 clearTimeout(connectTimer);
                 this.transition({ state: "open" });
                 this.timers.resetIdle();
+                settled = true;
                 resolve();
             });
 
@@ -226,6 +304,13 @@ export class TcpTransport implements Transport {
             });
 
             socket.on("error", (err: Error) => {
+                // A pre-connect error (refused, unreachable, …) fails THIS
+                // attempt so the caller can fall back to the next candidate
+                // immediately instead of waiting out the connect timer.
+                if (!connected) {
+                    fail(err instanceof Error ? err : new Error(String(err)));
+                    return;
+                }
                 // Only re-emit if a consumer is listening. During a failed
                 // connect() the transport has no owner yet, so an unhandled
                 // "error" would throw — the error is still surfaced via the
@@ -241,6 +326,12 @@ export class TcpTransport implements Transport {
             });
 
             socket.on("close", (hadError: boolean) => {
+                if (!connected) {
+                    // The attempt never completed (error already handled it,
+                    // or the socket died silently before connecting).
+                    fail(new TransportError("socket closed before connect completed"));
+                    return;
+                }
                 this.timers.clearAll();
                 // Only auto-transition on *unexpected* closes (still open/connecting).
                 // A user-initiated close() drives the transition to "closed" itself.

@@ -76,7 +76,9 @@ export interface TransportOptions {
      * @defaultValue undefined (disabled)
      */
     readonly readTimeoutMs?: number;
-    /** Allow IPv6 addresses.
+    /** Allow IPv6 addresses. Candidates from BOTH families are resolved and
+     * attempted in preference order with connect-level fallback; this flag
+     * only decides which family is tried first.
      * @defaultValue true
      */
     readonly ipv6?: boolean;
