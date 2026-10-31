@@ -19,6 +19,7 @@
 
 export { connect } from "./connect.js";
 export { resolveHost, TcpTransport } from "./transport.js";
+export { resolveHostCandidates } from "./resolve.js";
 export type { Transport, StreamTransport, DatagramTransport, UdpAddress, DatagramCloseReason } from "./types.js";
 
 export {
