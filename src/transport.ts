@@ -199,17 +199,13 @@ export class TcpTransport implements Transport {
         // exactly like the historical full-timeout path.
         const deadlineMs = Date.now() + connectTimeoutMs;
         let lastError: Error = new TransportError("no resolved addresses");
-        for (let i = 0; i < candidates.length; i++) {
+        for (const [i, candidate] of candidates.entries()) {
             const isLast = i === candidates.length - 1;
             const remaining = deadlineMs - Date.now();
             const attemptTimeoutMs = isLast
                 ? Math.max(remaining, 1)
                 : Math.min(Math.max(remaining, 1), FALLBACK_ATTEMPT_TIMEOUT_MS);
             try {
-                const candidate = candidates[i];
-                if (candidate === undefined) {
-                    break;
-                }
                 // oxlint-disable-next-line no-await-in-loop -- fallback attempts must run in order; each starts only if the previous failed
                 await this._openSocket(options, candidate, noDelay, attemptTimeoutMs);
                 return;
