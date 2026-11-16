@@ -67,3 +67,83 @@ export function createTypedEventEmitter<T extends Record<string, (...args: reado
 ): TypedEventEmitter<T> {
     return new TypedEventEmitterImpl<T>(events);
 }
+
+/**
+ * Concrete implementation of a namespaced {@link EventProvider} view.
+ *
+ * Every method maps onto the base provider under `<namespace>:<event>`
+ * channels, so multiple scopes sharing one base provider never see each
+ * other's registrations or emissions. The base provider remains the sole
+ * listener store and dispatcher — the scope only translates channel names.
+ */
+class ScopedEventProviderImpl implements EventProvider {
+    /** Event names this scope has ever registered listeners for. Drives the
+     * untargeted `removeAllListeners()`, which must clear ONLY this scope's
+     * channels — a blanket call on the base would wipe every other scope's
+     * registrations too. */
+    private readonly registeredEvents = new Set<string>();
+
+    constructor(
+        private readonly base: EventProvider,
+        private readonly namespace: string,
+    ) {}
+
+    private channel(event: string): string {
+        return `${this.namespace}:${event}`;
+    }
+
+    public on(event: string, listener: (...args: unknown[]) => void): void {
+        this.registeredEvents.add(event);
+        this.base.on(this.channel(event), listener);
+    }
+
+    public once(event: string, listener: (...args: unknown[]) => void): void {
+        this.registeredEvents.add(event);
+        this.base.once(this.channel(event), listener);
+    }
+
+    public off(event: string, listener: (...args: unknown[]) => void): void {
+        this.base.off(this.channel(event), listener);
+    }
+
+    public removeListener(event: string, listener: (...args: unknown[]) => void): void {
+        this.base.removeListener(this.channel(event), listener);
+    }
+
+    public emit(event: string, ...args: unknown[]): boolean {
+        return this.base.emit(this.channel(event), ...args);
+    }
+
+    public listenerCount(event: string): number {
+        return this.base.listenerCount(this.channel(event));
+    }
+
+    public removeAllListeners(event?: string): void {
+        if (event !== undefined) {
+            this.base.removeAllListeners(this.channel(event));
+            return;
+        }
+        for (const name of this.registeredEvents) {
+            this.base.removeAllListeners(this.channel(name));
+        }
+    }
+}
+
+/**
+ * Create an EventProvider view that namespaces all operations onto a base
+ * provider under a transport-unique channel key.
+ *
+ * This is how a process-wide shared provider (e.g. browsersmith's
+ * `nodeEventProvider` singleton) can be injected into many transports without
+ * them cross-delivering `data`/`close`/`error` events: each scope registers
+ * and emits only on its own `<namespace>:<event>` channels of the base, so
+ * the base provider stays the single injected backend while delivery is
+ * scoped per instance.
+ *
+ * @param base - The shared EventProvider backend (listener store + dispatcher).
+ * @param namespace - Transport-unique channel prefix for this scope.
+ * @returns An EventProvider whose surface is confined to the namespace.
+ */
+export function createScopedEventProvider(base: EventProvider, namespace: string): EventProvider {
+    return new ScopedEventProviderImpl(base, namespace);
+}
