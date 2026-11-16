@@ -92,6 +92,11 @@ Full API documentation (generated from TSDoc annotations): [docs/README.md](docs
 | `IdleTimeoutError` | class | No data flowed within the idle timeout |
 | `ReadTimeoutError` | class | A `read()` saw no data within the per-read timeout |
 
+
+## Contributing
+
+Contributions are welcome — bug reports, reproductions, docs and code alike. Start with [CONTRIBUTING.md](CONTRIBUTING.md); the full guide lives in the [browsersmith repo](https://github.com/jverneuer/browsersmith/blob/main/CONTRIBUTING.md). First timer? Check the [`good first issue`](https://github.com/jverneuer/browsercore-transport/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) label. Security issues: [SECURITY.md](SECURITY.md), never a public issue.
+
 ## License
 
 MIT
