@@ -40,6 +40,11 @@ transport.on("state", (s) => { /* connecting -> open -> closing -> closed */ });
 await transport.close();
 ```
 
+Event delivery is scoped per transport instance: registrations and emissions
+are namespaced onto the injected provider under a transport-unique channel, so
+a shared provider (e.g. a process-wide `nodeEventProvider` singleton) never
+cross-delivers `data`/`close`/`error` events between transports.
+
 ## Package Dependencies
 
 ```

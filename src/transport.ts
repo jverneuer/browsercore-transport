@@ -24,6 +24,7 @@ import type {
 } from "./types.js";
 import { ConnectTimeoutError, TransportError, ensureTransportError } from "./errors.js";
 import { assertNever } from "./utils.js";
+import { createScopedEventProvider } from "./events.js";
 import { createDeferred } from "./deferred.js";
 import { createDrainQueue } from "./drain.js";
 import { createTransportTimers } from "./timers.js";
@@ -41,6 +42,21 @@ const DEFAULT_NO_DELAY = true;
  * hundred milliseconds. The final candidate gets the remaining budget.
  */
 const FALLBACK_ATTEMPT_TIMEOUT_MS = 300;
+
+/**
+ * Prefix for the per-instance event channels this transport registers on the
+ * injected EventProvider (see {@link TcpTransport} event scoping).
+ */
+const EVENT_CHANNEL_PREFIX = "tcp";
+
+/**
+ * Process-wide serial that makes event channels unique per TcpTransport
+ * instance. {@link TransportId} is a caller-supplied correlation handle —
+ * `connect` even mints it from `Date.now()`, so two transports created in the
+ * same millisecond (or with the same explicit id) can share one — and channel
+ * keys derived from `id` alone would cross-deliver events between them.
+ */
+let eventChannelSerial = 0;
 
 /**
  * Concrete transport implementation over an injected {@link Net} socket.
@@ -80,7 +96,9 @@ export class TcpTransport implements Transport {
 
     // -------------------------------------------------------------------------
     // EventProvider delegation — decouples the transport from any specific
-    // runtime event system.
+    // runtime event system. All methods operate on the per-instance scoped
+    // view of the injected provider, so a shared provider never cross-delivers
+    // events between transports.
     // -------------------------------------------------------------------------
 
     public on(event: string, listener: (...args: unknown[]) => void): void {
@@ -151,7 +169,16 @@ export class TcpTransport implements Transport {
      */
     private constructor(id: TransportId, events: EventProvider) {
         this.id = id;
-        this.events = events;
+        // Scope event delivery to THIS instance: the injected provider is
+        // frequently shared process-wide (e.g. browsersmith's nodeEventProvider
+        // singleton), so unscoped registrations would cross-deliver
+        // data/close/error events between transports. The channel namespace
+        // gets a process-unique serial because `id` alone is a correlation
+        // handle, not a uniqueness guarantee.
+        this.events = createScopedEventProvider(
+            events,
+            `${EVENT_CHANNEL_PREFIX}:${++eventChannelSerial}:${id}`,
+        );
     }
 
     /**
