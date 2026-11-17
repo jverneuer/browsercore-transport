@@ -97,7 +97,7 @@ function createFakeNet(): { readonly net: Net; readonly sockets: FakeSocket[] } 
 
 /**
  * Two transports over fake sockets sharing ONE EventProvider — and the SAME
- * correlation id, which `connect()` mints from `Date.now()` and
+ * correlation id, which `connect()` mints from `clock.now()` and
  * `TcpTransport.create` accepts from callers. The scoped channels must be
  * unique per INSTANCE even when the id collides.
  */

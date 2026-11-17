@@ -6,7 +6,7 @@
  * setup, and resolves once the connection is established.
  */
 
-import type { Transport, TransportId, TransportOptions } from "./types.js";
+import { systemClock, type Transport, type TransportId, type TransportOptions } from "./types.js";
 import { TcpTransport } from "./transport.js";
 
 /**
@@ -48,6 +48,11 @@ import { TcpTransport } from "./transport.js";
  * @since 0.1.0
  */
 export function connect(options: TransportOptions): Promise<Transport> {
-    const id = `transport_${Date.now().toString(36)}` as TransportId;
+    // Ids are correlation handles, so the wall clock (`now()`) is the right
+    // source — deadline math elsewhere in the package uses `monotonic()`.
+    // Resolving the clock here keeps the id and the transport's timers on the
+    // same injected source (or the same systemClock default).
+    const clock = options.clock ?? systemClock;
+    const id = `transport_${clock.now().toString(36)}` as TransportId;
     return TcpTransport.create(id, options);
 }

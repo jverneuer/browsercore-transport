@@ -10,17 +10,18 @@
  * runtime-agnostic (Node, Bun, Deno, Cloudflare Workers, mocks).
  */
 
-import type { EventProvider, Socket } from "@browsercore/contracts";
-import type {
-    CloseReason,
-    Deferred,
-    DrainQueue,
-    ResolvedAddress,
-    Transport,
-    TransportId,
-    TransportOptions,
-    TransportState,
-    TransportTimers,
+import type { Clock, EventProvider, Socket } from "@browsercore/contracts";
+import {
+    systemClock,
+    type CloseReason,
+    type Deferred,
+    type DrainQueue,
+    type ResolvedAddress,
+    type Transport,
+    type TransportId,
+    type TransportOptions,
+    type TransportState,
+    type TransportTimers,
 } from "./types.js";
 import { ConnectTimeoutError, TransportError, ensureTransportError } from "./errors.js";
 import { assertNever } from "./utils.js";
@@ -52,7 +53,7 @@ const EVENT_CHANNEL_PREFIX = "tcp";
 /**
  * Process-wide serial that makes event channels unique per TcpTransport
  * instance. {@link TransportId} is a caller-supplied correlation handle —
- * `connect` even mints it from `Date.now()`, so two transports created in the
+ * `connect` even mints it from `clock.now()`, so two transports created in the
  * same millisecond (or with the same explicit id) can share one — and channel
  * keys derived from `id` alone would cross-deliver events between them.
  */
@@ -84,6 +85,13 @@ let eventChannelSerial = 0;
 export class TcpTransport implements Transport {
     public readonly id: TransportId;
     private readonly events: EventProvider;
+    /**
+     * Time + timer source (canonical `Clock` from @browsercore/contracts).
+     * Connect/idle/read deadlines read `monotonic()` — never `now()` deltas,
+     * which wall-clock drift (NTP steps) would corrupt. Injected via
+     * {@link TcpTransport.create} from `options.clock ?? systemClock`.
+     */
+    private readonly clock: Clock;
     // `_state` is the one exception to the no-underscore rule: the public
     // `get state()` getter (required by the Transport interface) already
     // claims the name `state`, so the backing field keeps a trailing marker.
@@ -156,7 +164,7 @@ export class TcpTransport implements Transport {
                 "TcpTransport.create requires an injected EventProvider (options.events)",
             );
         }
-        const transport = new TcpTransport(id, options.events);
+        const transport = new TcpTransport(id, options.events, options.clock ?? systemClock);
         return transport._establish(options).then(() => transport);
     }
 
@@ -166,9 +174,12 @@ export class TcpTransport implements Transport {
      * @param id - Opaque correlation id assigned to the transport.
      * @param events - Injected EventProvider backend (decouples from any
      *   specific runtime event system).
+     * @param clock - Injected canonical `Clock` (time + timers). Defaults to
+     *   {@link systemClock} — resolved by {@link TcpTransport.create}.
      */
-    private constructor(id: TransportId, events: EventProvider) {
+    private constructor(id: TransportId, events: EventProvider, clock: Clock) {
         this.id = id;
+        this.clock = clock;
         // Scope event delivery to THIS instance: the injected provider is
         // frequently shared process-wide (e.g. browsersmith's nodeEventProvider
         // singleton), so unscoped registrations would cross-deliver
@@ -210,6 +221,7 @@ export class TcpTransport implements Transport {
         this.timers = createTransportTimers({
             idleTimeoutMs: options.idleTimeoutMs,
             readTimeoutMs: options.readTimeoutMs,
+            clock: this.clock,
             onIdleTimeout: (err) => {
                 this.emit("error", err);
                 void this.close({ kind: "timeout", afterMs: err.idleMs });
@@ -223,12 +235,14 @@ export class TcpTransport implements Transport {
         // Happy-eyeballs-style sequential fallback: every candidate except the
         // last gets a short per-attempt cap; the final candidate gets the rest
         // of the connect budget so a single-candidate resolution behaves
-        // exactly like the historical full-timeout path.
-        const deadlineMs = Date.now() + connectTimeoutMs;
+        // exactly like the historical full-timeout path. The deadline is
+        // MONOTONIC — wall-clock steps (NTP) must never stretch or shrink the
+        // connect budget.
+        const deadlineMs = this.clock.monotonic() + connectTimeoutMs;
         let lastError: Error = new TransportError("no resolved addresses");
         for (const [i, candidate] of candidates.entries()) {
             const isLast = i === candidates.length - 1;
-            const remaining = deadlineMs - Date.now();
+            const remaining = deadlineMs - this.clock.monotonic();
             const attemptTimeoutMs = isLast
                 ? Math.max(remaining, 1)
                 : Math.min(Math.max(remaining, 1), FALLBACK_ATTEMPT_TIMEOUT_MS);
@@ -238,7 +252,7 @@ export class TcpTransport implements Transport {
                 return;
             } catch (err) {
                 lastError = err instanceof Error ? err : new Error(String(err));
-                if (Date.now() >= deadlineMs) {
+                if (this.clock.monotonic() >= deadlineMs) {
                     break;
                 }
             }
@@ -282,7 +296,7 @@ export class TcpTransport implements Transport {
                     return;
                 }
                 settled = true;
-                clearTimeout(connectTimer);
+                this.clock.clearTimeout(connectTimer);
                 // Handlers on a never-connected socket are all guarded by the
                 // settled/connected flags, so the dead attempt's events cannot
                 // fire session behavior or state transitions after destroy().
@@ -290,13 +304,13 @@ export class TcpTransport implements Transport {
                 reject(err);
             };
 
-            const connectTimer = setTimeout(() => {
+            const connectTimer = this.clock.setTimeout(timeoutMs, () => {
                 fail(new ConnectTimeoutError(options.host, options.port, timeoutMs));
-            }, timeoutMs);
+            });
 
             socket.once("connect", () => {
                 connected = true;
-                clearTimeout(connectTimer);
+                this.clock.clearTimeout(connectTimer);
                 this.transition({ state: "open" });
                 this.timers.resetIdle();
                 settled = true;

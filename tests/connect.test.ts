@@ -66,7 +66,7 @@ describe("connect", () => {
     });
 
     it("mints a TransportId with the `transport_` prefix and base-36 timestamp", async () => {
-        // connect() builds the id as `transport_${Date.now().toString(36)}` —
+        // connect() builds the id as `transport_${clock.now().toString(36)}` —
         // verify the shape of the correlation handle rather than its uniqueness.
         const loop = await Loopback.create();
         try {
@@ -136,7 +136,10 @@ describe("connect", () => {
     it("honors connectTimeoutMs by rejecting when the host is unreachable", async () => {
         // connectTimeoutMs flows into the connect timer inside TcpTransport._establish.
         // A non-routable TEST-NET-1 address with a short timeout surfaces the
-        // timeout before any platform unreachable signal.
+        // timeout before any platform unreachable signal. The reported budget
+        // may be a hair under 50ms: deadlines now run on the monotonic clock
+        // (`performance.now()`, fractional ms) instead of integer `Date.now()`,
+        // so the final attempt's residual budget carries sub-ms precision.
         await expect(
             connect({
                 host: "192.0.2.1",
@@ -146,7 +149,7 @@ describe("connect", () => {
                 dns: mockDns("192.0.2.1", 4),
                 events: createMockEventProvider(),
             }),
-        ).rejects.toThrow(/timed out after 50ms/);
+        ).rejects.toThrow(/timed out after (50|49\.\d+)ms/);
     });
 });
 
