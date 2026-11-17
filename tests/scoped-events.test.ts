@@ -343,7 +343,7 @@ describe("TcpTransport event scoping — two transports, one shared provider (is
     });
 
     it("does not re-emit a socket error when only the OTHER transport has error listeners", async () => {
-        const { transportA, transportB, socketA } = await createSharedProviderPair();
+        const { transportB, socketA } = await createSharedProviderPair();
         const onErrorB = vi.fn();
         transportB.on("error", onErrorB);
 
@@ -354,7 +354,7 @@ describe("TcpTransport event scoping — two transports, one shared provider (is
     });
 
     it("once() fires exactly once for its own transport only", async () => {
-        const { transportA, transportB, socketA, socketB } = await createSharedProviderPair();
+        const { transportA, socketA, socketB } = await createSharedProviderPair();
         const onceA = vi.fn();
         transportA.once("data", onceA);
         socketA.emit("data", new Uint8Array([0x01]));

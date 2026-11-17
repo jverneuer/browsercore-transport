@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveHost, DnsResolutionError } from "../src/index.js";
+import type { DnsResolver } from "@browsercore/contracts";
 import { nodeDns, mockDns } from "./helpers.js";
 
 describe("resolveHost", () => {
@@ -39,10 +40,13 @@ describe("resolveHost", () => {
         // when they cannot determine the family. The `resolvedFamily || family`
         // fallback (resolveHost ~line 437) must then use the family we requested
         // rather than propagating a falsy value into ResolvedAddress.family.
-        const zeroFamilyDns = {
-            lookup(_hostname: string, _family: 4 | 6) {
-                return Promise.resolve([{ address: "192.0.2.5", family: 0 as const }]);
-            },
+        const zeroFamilyDns: DnsResolver = {
+            lookup: (_hostname, _family) =>
+                // Deliberately contract-violating fixture (family 0): the
+                // resolver LIES about the family, and resolveHost must
+                // normalize instead of propagating the bogus value — same
+                // fixture trick as dual-stack.test.ts's family-0 entry.
+                Promise.resolve([{ address: "192.0.2.5", family: 0 as unknown as 4 }]),
         };
 
         const result = await resolveHost("example.com", false, zeroFamilyDns);
@@ -53,8 +57,8 @@ describe("resolveHost", () => {
 
     it("passes IPv6 family when requested", async () => {
         let capturedFamily: 4 | 6 = 4;
-        const capturingDns = {
-            lookup(_hostname: string, family: 4 | 6) {
+        const capturingDns: DnsResolver = {
+            lookup: (_hostname, family) => {
                 capturedFamily = family;
                 return Promise.resolve([{ address: "::1", family: 6 }]);
             },
@@ -77,8 +81,8 @@ describe("resolveHost", () => {
 
     it("defaults to IPv4 family when ipv6 is false", async () => {
         let capturedFamily: 4 | 6 = 4;
-        const capturingDns = {
-            lookup(_hostname: string, family: 4 | 6) {
+        const capturingDns: DnsResolver = {
+            lookup: (_hostname, family) => {
                 capturedFamily = family;
                 return Promise.resolve([{ address: "127.0.0.1", family: 4 }]);
             },

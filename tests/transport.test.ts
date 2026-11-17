@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createServer, type Socket } from "node:net";
+import { createServer, type Server, type Socket } from "node:net";
+import { EventEmitter } from "node:events";
 import { connect } from "../src/index.js";
+import type { Socket as ContractSocket } from "@browsercore/contracts";
 import {
     ConnectTimeoutError,
     IdleTimeoutError,
@@ -243,7 +245,7 @@ describe("Step 5 — timeouts + error mapping", () => {
         const e = new TransportError("boom", { path: "/x" });
         expect(e).toBeInstanceOf(Error);
         expect(e.kind).toBe("TransportError");
-        expect(e.details.path).toBe("/x");
+        expect(e.details["path"]).toBe("/x");
     });
 
     it("is idempotent and resolves once across double close()", async () => {
@@ -301,7 +303,12 @@ describe("Step 6 — observability seam", () => {
 
             // "open" was the state reached during connect(); capture it directly.
             seen.push(transport.state.state);
-            transport.on("state", (s: TransportState) => seen.push(s.state));
+            // Transport.on is the EventProvider surface (`(...args: unknown[])`):
+            // the payload tuple is a transport contract fact, asserted here once.
+            transport.on("state", (...args: unknown[]) => {
+                const [state] = args as [TransportState];
+                seen.push(state.state);
+            });
 
             const sock = await serverSock;
             expect(transport.state.state).toBe("open");
@@ -395,15 +402,30 @@ describe("remote lifecycle — error and half-close drive state", () => {
 describe("connect timeout", () => {
     it("rejects with ConnectTimeoutError when the TCP handshake never completes", async () => {
         // A mock Net whose socket never fires "connect" — forces the connect
-        // timer to fire (transport.ts ~line 146).
-        const { EventEmitter } = await import("node:events");
+        // timer to fire (transport.ts ~line 146). EventEmitter base: the
+        // canonical Socket declares on/once as literal-event overloads, and
+        // TS 7's contravariant overload-implementation check rejects
+        // hand-rolled overload groups on a class; the inherited EventEmitter
+        // methods satisfy the interface (the any[] lives in @types/node).
+        class NeverConnectingSocket extends EventEmitter implements ContractSocket {
+            #destroyed = false;
+            get destroyed(): boolean {
+                return this.#destroyed;
+            }
+            write(_data: Uint8Array, cb?: (err?: Error | null) => void): boolean {
+                cb?.(null);
+                return true;
+            }
+            end(): void {
+                this.#destroyed = true;
+            }
+            destroy(): void {
+                // No-op beyond the flag: the timeout path must not throw.
+                this.#destroyed = true;
+            }
+        }
         const neverConnectingNet = {
-            connect(_options: unknown) {
-                const socket = new EventEmitter();
-                // Override destroy so the timeout path doesn't throw.
-                socket.destroy = () => {};
-                return socket as never;
-            },
+            connect: (): ContractSocket => new NeverConnectingSocket(),
         };
 
         await expect(

@@ -23,27 +23,31 @@ import type { EventProvider, TypedEventEmitter } from "@browsercore/contracts";
  *
  * @template T - The event map.
  */
-class TypedEventEmitterImpl<T extends Record<string, (...args: readonly unknown[]) => void>> implements TypedEventEmitter<T> {
+class TypedEventEmitterImpl<T extends Record<string, (...args: never[]) => void>> implements TypedEventEmitter<T> {
     constructor(private readonly events: EventProvider) {}
 
     on<K extends keyof T>(event: K, listener: T[K]): void {
         // The injected EventProvider's on()/once()/off() may return `this`
         // (chainable) per @browsercore/contracts — call without leaking that
         // chainable return into a void context (backend is swappable).
-        this.events.on(event as string, listener as (...args: readonly unknown[]) => void);
+        //
+        // `listener as never` is the variance bridge at this seam: the
+        // canonical map constraint is `(...args: never[]) => void` (the
+        // bottom function type — see contracts' events.ts), which is not
+        // assignable to the provider's `(...args: unknown[]) => void`
+        // parameter in either direction. The gap is closed by construction:
+        // `emit` — the only dispatcher — passes exactly `Parameters<T[K]>`.
+        // `never` (bottom) keeps the cast local and identity-preserving so
+        // off() removes the very reference on() registered.
+        this.events.on(event as string, listener as never);
     }
 
     once<K extends keyof T>(event: K, listener: T[K]): void {
-        this.events.once(event as string, listener as (...args: readonly unknown[]) => void);
+        this.events.once(event as string, listener as never);
     }
 
     off<K extends keyof T>(event: K, listener: T[K]): void {
-        this.events.off(event as string, listener as (...args: readonly unknown[]) => void);
-    }
-
-    removeListener<K extends keyof T>(event: K, listener: T[K]): this {
-        this.events.removeListener(event as string, listener as (...args: readonly unknown[]) => void);
-        return this;
+        this.events.off(event as string, listener as never);
     }
 
     emit<K extends keyof T>(event: K, ...args: Parameters<T[K]>): boolean {
@@ -54,15 +58,15 @@ class TypedEventEmitterImpl<T extends Record<string, (...args: readonly unknown[
 /**
  * Create a typed event emitter backed by an injected EventProvider.
  *
- * The returned object is a {@link TypedEventEmitter} whose backend is the
- * provider you pass in. Interact only through the typed interface so the
- * emitter can be swapped without changing consumer code.
+ * The returned object is a typed emitter whose backend is the provider you
+ * pass in. Interact only through the typed interface so the emitter can be
+ * swapped without changing consumer code.
  *
  * @template T - A map from event names to listener function signatures.
  * @param events - The EventProvider backend (e.g. EventTarget, mock).
  * @returns A typed event emitter instance.
  */
-export function createTypedEventEmitter<T extends Record<string, (...args: readonly unknown[]) => void>>(
+export function createTypedEventEmitter<T extends Record<string, (...args: never[]) => void>>(
     events: EventProvider,
 ): TypedEventEmitter<T> {
     return new TypedEventEmitterImpl<T>(events);
