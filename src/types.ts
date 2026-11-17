@@ -7,40 +7,42 @@
  * this package imports only interfaces from @browsercore/contracts.
  */
 
-import type { EventProvider, Net, DnsResolver } from "@browsercore/contracts";
+import type {
+    Transport as CanonicalTransport,
+    EventProvider,
+    Net,
+    DnsResolver,
+} from "@browsercore/contracts";
+
+// ---------------------------------------------------------------------------
+// Canonical transport types — re-exported, no longer declared here.
+//
+// @browsercore/contracts 0.2.5 adopted this package's Transport shape as the
+// canonical definition (replaceability audit 2026-11-16 found Transport
+// declared twice, type-incompatible, bridged only by casts in fetch). The
+// local duplicates that used to live in this file are removed; what follows
+// re-exports the single definitions so every consumer of
+// @browsercore/transport sees the exact same types as consumers of
+// @browsercore/contracts.
+// ---------------------------------------------------------------------------
+
+export type {
+    Transport,
+    TransportState,
+    CloseReason,
+    DatagramTransport,
+    UdpAddress,
+    DatagramCloseReason,
+} from "@browsercore/contracts";
 
 /**
  * Branded transport connection identifier.
  *
  * Opaque id used for logging/correlation. Created by {@link connect} or passed
- * explicitly to {@link TcpTransport.create}.
+ * explicitly to {@link TcpTransport.create}. Assignable to/from the canonical
+ * `Transport["id"]: string` — the brand lives here, not in contracts.
  */
 export type TransportId = string & { __brand: "TransportId" };
-
-/**
- * Why a transport was closed. Discriminated union — every case is explicit.
- *
- * Used both as the `reason` in a closed {@link TransportState} and as the
- * argument to {@link Transport.close}.
- */
-export type CloseReason =
-    | { readonly kind: "client_close" }
-    | { readonly kind: "remote_close" }
-    | { readonly kind: "error"; readonly error: Error }
-    | { readonly kind: "timeout"; readonly afterMs: number };
-
-/**
- * Lifecycle state of a transport connection.
- *
- * A transport moves `connecting → open → closing → closed`. The `closed` case
- * carries the {@link CloseReason} so callers can distinguish a clean close from
- * an error or timeout.
- */
-export type TransportState =
-    | { readonly state: "connecting" }
-    | { readonly state: "open" }
-    | { readonly state: "closing" }
-    | { readonly state: "closed"; readonly reason: CloseReason };
 
 /**
  * Options for {@link connect}.
@@ -121,80 +123,11 @@ export interface ResolvedAddress {
 }
 
 /**
- * The public interface every transport implements. Higher layers depend on this.
- *
- * A reliable, ordered byte stream over TCP with no knowledge of TLS or HTTP.
- */
-export interface Transport extends EventProvider {
-    /** Opaque identifier for logging / correlation. */
-    readonly id: TransportId;
-    /** Current lifecycle state. */
-    readonly state: TransportState;
-
-    /**
-     * Write bytes to the stream. Resolves when the data has been handed to the
-     * kernel (or buffered). Rejects if the transport is not open.
-     * Backpressure: the promise may take time to resolve under heavy write load.
-     */
-    write(data: Uint8Array): Promise<void>;
-
-    /**
-     * Read available data. Resolves with the next chunk of bytes, or rejects if
-     * the transport closes before any data arrives. For a streaming read API,
-     * subscribe to the `"data"` event instead.
-     */
-    read(): Promise<Uint8Array>;
-
-    /**
-     * Gracefully close the transport. Resolves once the socket has closed.
-     * `reason` is recorded for observability.
-     */
-    close(reason?: CloseReason): Promise<void>;
-}
-
-/**
  * Stream-based transport — a reliable ordered byte stream (TCP).
- * Alias for {@link Transport} so higher layers can depend on the stream
- * abstraction explicitly, distinct from {@link DatagramTransport}.
+ * Alias for the canonical {@link Transport} so higher layers can depend on the
+ * stream abstraction explicitly, distinct from {@link DatagramTransport}.
  */
-export type StreamTransport = Transport;
-
-/**
- * UDP datagram transport abstraction. Implemented by a UDP transport package
- * (or a thin `node:dgram` adapter); injected into @browsercore/quic so QUIC
- * stays testable with a fake datagram transport and has no dependency on
- * socket internals.
- */
-export interface DatagramTransport {
-    /** Opaque identifier for logging / correlation. */
-    readonly id: string;
-    /** Send a datagram to `address`. Resolves once handed to the kernel / buffered. */
-    send(data: Uint8Array, address: UdpAddress): Promise<void>;
-    /**
-     * Receive the next datagram. Resolves with the bytes and the sender's
-     * address, or rejects if the transport closes first.
-     */
-    recv(): Promise<{ readonly data: Uint8Array; readonly from: UdpAddress }>;
-    /** Close the transport. */
-    close(reason?: DatagramCloseReason): Promise<void>;
-}
-
-/** A resolved UDP socket address. */
-export interface UdpAddress {
-    /** Hostname or IP address. */
-    readonly address: string;
-    /** UDP port number. */
-    readonly port: number;
-    /** IP family — 4 for IPv4, 6 for IPv6. */
-    readonly family: 4 | 6;
-}
-
-/** Why a datagram transport was closed. */
-export type DatagramCloseReason =
-    | { readonly kind: "client_close" }
-    | { readonly kind: "remote_close" }
-    | { readonly kind: "error"; readonly error: Error }
-    | { readonly kind: "timeout"; readonly afterMs: number };
+export type StreamTransport = CanonicalTransport;
 
 /**
  * A promise whose settlement is controlled manually from the outside.
