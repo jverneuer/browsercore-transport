@@ -5,23 +5,34 @@
  * the per-read timer bounds how long a single `read()` may block. Both are
  * optional — their durations are `undefined` when disabled, and every reset is
  * a no-op in that case.
+ *
+ * Every timer is armed on the injected canonical `Clock`
+ * (`@browsercore/contracts`), never on bare `setTimeout` — the runtime-coupling
+ * audit (2026-11-16) flagged this module as the polyrepo's only Node-typed
+ * timer-handle leak, and timer tokens are now opaque {@link TimerHandle}s.
  */
 
 import { IdleTimeoutError, ReadTimeoutError } from "./errors.js";
-import type { TransportTimers } from "./types.js";
+import { systemClock, type Clock, type TimerHandle, type TransportTimers } from "./types.js";
 
 /**
  * Options for {@link createTransportTimers}.
  *
  * Durations are optional — a timeout is disabled when its duration is `undefined`,
  * and every reset is a no-op in that case. Callbacks (not timers) carry the side
- * effects so the timer module owns only `setTimeout`/`clearTimeout`.
+ * effects so the timer module owns only clock `setTimeout`/`clearTimeout`.
  */
 export interface TransportTimersOptions {
     /** Idle timeout in ms, or `undefined` to disable. */
     readonly idleTimeoutMs: number | undefined;
     /** Per-read timeout in ms, or `undefined` to disable. */
     readonly readTimeoutMs: number | undefined;
+    /**
+     * Time + timer source — the canonical `Clock` from
+     * `@browsercore/contracts`. Defaults to {@link systemClock} (platform
+     * globals); inject a manual-advance Clock for deterministic tests.
+     */
+    readonly clock?: Clock;
     /**
      * Called when the idle timer fires. The transport emits the error and
      * closes with a `"timeout"` reason — supplied by the caller so this module
@@ -42,10 +53,11 @@ export interface TransportTimersOptions {
  * Create the idle + per-read timer pair that drive transport lifecycle timeouts.
  *
  * Side effects are delegated to the caller-supplied callbacks, so this module
- * only manages `setTimeout`/`clearTimeout` and the timeout durations. Return
+ * only manages clock arming/cancelling and the timeout durations. Return
  * the {@link TransportTimers} interface and wire it into a {@link TcpTransport}.
  *
- * @param opts - Configuration: durations and the callbacks invoked on timeout.
+ * @param opts - Configuration: durations, the {@link Clock} timers arm on
+ *   (defaults to {@link systemClock}), and the callbacks invoked on timeout.
  * @returns A {@link TransportTimers} handle with reset/clear methods.
  *
  * @example
@@ -64,8 +76,9 @@ export interface TransportTimersOptions {
  * @since 0.1.0
  */
 export function createTransportTimers(opts: TransportTimersOptions): TransportTimers {
-    let idleTimer: NodeJS.Timeout | undefined;
-    let readTimer: NodeJS.Timeout | undefined;
+    const clock = opts.clock ?? systemClock;
+    let idleTimer: TimerHandle | undefined;
+    let readTimer: TimerHandle | undefined;
 
     return {
         resetIdle(): void {
@@ -73,14 +86,18 @@ export function createTransportTimers(opts: TransportTimersOptions): TransportTi
             if (idleMs === undefined) {
                 return;
             }
-            clearTimeout(idleTimer);
-            idleTimer = setTimeout(() => {
+            if (idleTimer !== undefined) {
+                clock.clearTimeout(idleTimer);
+            }
+            idleTimer = clock.setTimeout(idleMs, () => {
                 opts.onIdleTimeout(new IdleTimeoutError(idleMs));
-            }, idleMs);
+            });
         },
 
         clearIdle(): void {
-            clearTimeout(idleTimer);
+            if (idleTimer !== undefined) {
+                clock.clearTimeout(idleTimer);
+            }
             idleTimer = undefined;
         },
 
@@ -89,20 +106,28 @@ export function createTransportTimers(opts: TransportTimersOptions): TransportTi
             if (readMs === undefined) {
                 return;
             }
-            clearTimeout(readTimer);
-            readTimer = setTimeout(() => {
+            if (readTimer !== undefined) {
+                clock.clearTimeout(readTimer);
+            }
+            readTimer = clock.setTimeout(readMs, () => {
                 opts.onReadTimeout(new ReadTimeoutError(readMs));
-            }, readMs);
+            });
         },
 
         clearRead(): void {
-            clearTimeout(readTimer);
+            if (readTimer !== undefined) {
+                clock.clearTimeout(readTimer);
+            }
             readTimer = undefined;
         },
 
         clearAll(): void {
-            clearTimeout(idleTimer);
-            clearTimeout(readTimer);
+            if (idleTimer !== undefined) {
+                clock.clearTimeout(idleTimer);
+            }
+            if (readTimer !== undefined) {
+                clock.clearTimeout(readTimer);
+            }
             idleTimer = undefined;
             readTimer = undefined;
         },

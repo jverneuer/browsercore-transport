@@ -33,6 +33,7 @@ export {
 export type { TransportErrorDetails } from "./errors.js";
 
 export {
+    systemClock,
     type CloseReason,
     type ResolvedAddress,
     type TransportId,
@@ -49,5 +50,6 @@ export { createTypedEventEmitter } from "./events.js";
 export type { TypedEventEmitter } from "@browsercore/contracts";
 
 // Re-export platform-agnostic contracts for convenience — consumers can pull
-// Net/Socket/DnsResolver from here without importing @browsercore/contracts.
+// Net/Socket/DnsResolver/Clock from here without importing @browsercore/contracts.
 export type { Net, Socket, DnsResolver, ConnectOptions, IPAddress } from "@browsercore/contracts";
+export type { Clock, TimerHandle } from "@browsercore/contracts";

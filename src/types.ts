@@ -12,6 +12,8 @@ import type {
     EventProvider,
     Net,
     DnsResolver,
+    Clock,
+    TimerHandle,
 } from "@browsercore/contracts";
 
 // ---------------------------------------------------------------------------
@@ -112,7 +114,63 @@ export interface TransportOptions {
      * EventProvider via the composition root (browsersmith).
      */
     readonly events?: EventProvider;
+    /**
+     * Time + timer source — the canonical `Clock` from
+     * `@browsercore/contracts` (0.2.6). Every timer the transport arms
+     * (connect, idle, per-read) and every timestamp it mints (correlation
+     * ids) routes through it.
+     *
+     * Defaults to {@link systemClock}, which delegates to the platform
+     * globals (`Date.now()`, `performance.now()`, `setTimeout`) — behavior is
+     * identical unless the caller opts in. Inject a deterministic Clock in
+     * tests to fire timeouts at exact virtual instants with zero real
+     * timers. Callers that assemble a `Platform` composition root may pass
+     * `platform.time` here — this package takes the Clock directly rather
+     * than the whole Platform bundle.
+     */
+    readonly clock?: Clock;
 }
+
+// ---------------------------------------------------------------------------
+// Clock seam (injected — the canonical @browsercore/contracts Clock)
+// ---------------------------------------------------------------------------
+
+/**
+ * Re-exported so consumers of this package can type their own Clock
+ * injections without importing `@browsercore/contracts` directly — same
+ * convenience rule as `Net`/`Socket`/`DnsResolver` below.
+ */
+export type { Clock, TimerHandle };
+
+/**
+ * The default {@link Clock}: delegates to the platform globals
+ * (`Date.now()`, `performance.now()`, global `setTimeout`/`clearTimeout`).
+ *
+ * This is the same seam pattern tls/http2 use (`systemClock` housed next to
+ * the options that inject it), but typed as the CANONICAL contracts Clock —
+ * the superseding shape all sibling package-local clocks migrate onto
+ * (replaceability audit 2026-11-16, remediation item #6). Production callers
+ * never need to supply a clock; tests inject a manual-advance fake so
+ * timeouts fire at exact virtual instants without real timers.
+ *
+ * Unit contract (from the contract's docs): `now()` is WALL time (epoch ms,
+ * can jump — NTP); `monotonic()` is elapsed/deadline time and never goes
+ * backwards. Deadline math in this package uses `monotonic()` exclusively.
+ */
+export const systemClock: Clock = {
+    now: () => Date.now(),
+    monotonic: () => performance.now(),
+    sleep: (ms) =>
+        new Promise<void>((resolve) => {
+            setTimeout(resolve, ms);
+        }),
+    setTimeout: (ms, fn) => {
+        return setTimeout(fn, ms);
+    },
+    clearTimeout: (handle) => {
+        clearTimeout(handle as ReturnType<typeof setTimeout>);
+    },
+};
 
 /** A resolved address, returned by the DNS resolution step. */
 export interface ResolvedAddress {
