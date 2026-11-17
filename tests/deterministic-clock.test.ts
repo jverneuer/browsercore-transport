@@ -170,10 +170,15 @@ class FakeSocket {
                 return self.destroyedFlag;
             },
             once: (event, listener) => {
-                self.addListener(event, listener, true);
+                // The canonical Socket declares on/once as literal-event
+                // overloads, so `listener` arrives as a union of narrow
+                // signatures; the store below takes the widest callable shape.
+                // Safe because emission is test-driven and only ever passes
+                // the payload the matching overload declares.
+                self.addListener(event, listener as (...args: unknown[]) => void, true);
             },
             on: (event, listener) => {
-                self.addListener(event, listener, false);
+                self.addListener(event, listener as (...args: unknown[]) => void, false);
             },
         };
     }

@@ -17,7 +17,7 @@ describe("TransportError", () => {
         const e = new TransportError("boom", { path: "/x" }, { cause });
         expect(e).toBeInstanceOf(Error);
         expect(e.kind).toBe("TransportError");
-        expect(e.details.path).toBe("/x");
+        expect(e.details["path"]).toBe("/x");
         expect(e.cause).toBe(cause);
     });
 });

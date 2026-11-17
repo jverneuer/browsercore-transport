@@ -15,7 +15,7 @@ import { createMockEventProvider } from "./test-helpers.js";
  */
 
 /** DnsResolver whose answer depends on the requested family. */
-function familyDns(behaviors: Partial<Record<4 | 6, IPAddress[] | Error>>): DnsResolver {
+function familyDns(behaviors: Partial<Record<4 | 6, IPAddress[] | Error | string>>): DnsResolver {
     return {
         lookup(_hostname, family) {
             const result = behaviors[family];
@@ -65,20 +65,25 @@ function fakeNet(behavior: (host: string, family: 4 | 6, index: number) => "conn
                     return destroyed;
                 },
                 once(event, listener) {
+                    // `listener` is a union of the Socket overloads' narrow
+                    // signatures (contextual typing); the store below takes
+                    // the widest callable shape. Emission is driven by `emit`
+                    // with exactly the payload the matching overload declares.
+                    const wide = listener as (...args: unknown[]) => void;
                     const wrapped = (...args: unknown[]): void => {
                         const arr = listeners.get(event);
                         if (arr) {
                             const i = arr.indexOf(wrapped);
                             if (i >= 0) arr.splice(i, 1);
                         }
-                        listener(...args);
+                        wide(...args);
                     };
                     if (!listeners.has(event)) listeners.set(event, []);
                     listeners.get(event)!.push(wrapped);
                 },
                 on(event, listener) {
                     if (!listeners.has(event)) listeners.set(event, []);
-                    listeners.get(event)!.push(listener);
+                    listeners.get(event)!.push(listener as (...args: unknown[]) => void);
                 },
             };
             if (outcome === "connect") {

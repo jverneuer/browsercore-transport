@@ -56,6 +56,16 @@ function socketOf(t: Transport): Socket {
     return (t as unknown as { socket: Socket }).socket;
 }
 
+/**
+ * Write-override view of a node socket: the `(data, flushCallback)` overload
+ * the transport always dials. Narrowing `write` to it (node's own full
+ * overload set is not assignable-to from a single signature) lets the
+ * flush-error tests swap in a fake and restore the real one.
+ */
+type WriteOverrideTarget = Omit<Socket, "write"> & {
+    write: (data: Uint8Array, cb?: (err?: Error | null) => void) => boolean;
+};
+
 /** Read exactly `total` bytes from the server-side socket. */
 function readAll(sock: Socket, total: number, timeoutMs = 5_000): Promise<Uint8Array> {
     return new Promise<Uint8Array>((resolve, reject) => {
@@ -131,16 +141,13 @@ describe("write path — kernel-accepted and error paths", () => {
         try {
             loop.acceptOne();
             const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
-            const socket = socketOf(transport) as Socket & {
-                write: (...args: unknown[]) => unknown;
-            };
+            const socket = socketOf(transport) as WriteOverrideTarget;
             const realWrite = socket.write.bind(socket);
 
-            (socket as { write: (...args: unknown[]) => unknown }).write = (
-                _data: unknown,
-                cb: (err: Error) => void,
-            ): boolean => {
-                cb(new Error("write aborted"));
+            // Override with node's own write shape: the transport always
+            // passes (data, flushCallback).
+            socket.write = (_data: Uint8Array, cb?: (err?: Error | null) => void): boolean => {
+                cb?.(new Error("write aborted"));
                 return true;
             };
 
@@ -148,7 +155,7 @@ describe("write path — kernel-accepted and error paths", () => {
                 "write aborted",
             );
 
-            (socket as { write: unknown }).write = realWrite;
+            socket.write = realWrite;
             await transport.close();
         } finally {
             await loop.close();
@@ -184,16 +191,11 @@ describe("write path — kernel-accepted and error paths", () => {
         try {
             loop.acceptOne();
             const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
-            const socket = socketOf(transport) as Socket & {
-                write: (...args: unknown[]) => unknown;
-            };
+            const socket = socketOf(transport) as WriteOverrideTarget;
             const realWrite = socket.write.bind(socket);
-            (socket as { write: (...args: unknown[]) => unknown }).write = (
-                _data: unknown,
-                cb: (err: Error) => void,
-            ): boolean => {
+            socket.write = (_data: Uint8Array, cb?: (err?: Error | null) => void): boolean => {
                 // Backpressure + synchronous settle via the error branch.
-                cb(new Error("flush error"));
+                cb?.(new Error("flush error"));
                 return false;
             };
 
@@ -206,7 +208,7 @@ describe("write path — kernel-accepted and error paths", () => {
             expect(() => socket.emit("drain")).not.toThrow();
             await tick(0);
 
-            (socket as { write: unknown }).write = realWrite;
+            socket.write = realWrite;
             await transport.close();
         } finally {
             await loop.close();
@@ -224,15 +226,10 @@ describe("write path — kernel-accepted and error paths", () => {
             const transport = await connect({ host: "127.0.0.1", port: loop.port, net: nodeNet, dns: nodeDns, events: createMockEventProvider() });
             transport.on("error", () => {});
             transport.on("close", () => {});
-            const socket = socketOf(transport) as Socket & {
-                write: (...args: unknown[]) => unknown;
-            };
+            const socket = socketOf(transport) as WriteOverrideTarget;
             const realWrite = socket.write.bind(socket);
-            (socket as { write: (...args: unknown[]) => unknown }).write = (
-                _data: unknown,
-                cb: (err: Error) => void,
-            ): boolean => {
-                cb(new Error("flush error"));
+            socket.write = (_data: Uint8Array, cb?: (err?: Error | null) => void): boolean => {
+                cb?.(new Error("flush error"));
                 return false;
             };
 
@@ -246,7 +243,7 @@ describe("write path — kernel-accepted and error paths", () => {
             expect(() => socket.emit("error", new Error("late socket error"))).not.toThrow();
             await tick(0);
 
-            (socket as { write: unknown }).write = realWrite;
+            socket.write = realWrite;
             socket.destroy();
             await tick(50);
         } finally {
@@ -442,7 +439,12 @@ describe("idle timer — reset on data flow", () => {
             const sock = await serverSock;
 
             const errors: Error[] = [];
-            transport.on("error", (e: Error) => errors.push(e));
+            // Transport.on is the EventProvider surface (`(...args: unknown[])`);
+            // the error payload tuple is a transport contract fact, asserted once.
+            transport.on("error", (...args: unknown[]) => {
+                const [error] = args as [Error];
+                errors.push(error);
+            });
 
             // Trickling faster than the 180ms idle window keeps resetting the timer.
             for (let i = 0; i < 3; i++) {

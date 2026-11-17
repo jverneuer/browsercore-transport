@@ -118,7 +118,7 @@ describe("TypedEventEmitter", () => {
         });
     });
 
-    describe("off / removeListener", () => {
+    describe("off", () => {
         it("off() removes a specific listener", () => {
             const emitter = createTypedEventEmitter<TestEvents>(createMockEventProvider());
             const keep = vi.fn();
@@ -131,13 +131,13 @@ describe("TypedEventEmitter", () => {
             expect(keep).toHaveBeenCalledTimes(1);
         });
 
-        it("removeListener() is an alias for off()", () => {
+        it("off() drops the listener from the data channel", () => {
             const emitter = createTypedEventEmitter<TestEvents>(createMockEventProvider());
             const keep = vi.fn();
             const drop = vi.fn();
             emitter.on("data", keep);
             emitter.on("data", drop);
-            emitter.removeListener("data", drop);
+            emitter.off("data", drop);
             emitter.emit("data", "payload");
             expect(drop).not.toHaveBeenCalled();
             expect(keep).toHaveBeenCalledTimes(1);
