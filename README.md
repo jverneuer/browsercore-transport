@@ -114,6 +114,27 @@ the default `systemClock` (real platform timers), while
 and read deadlines at exact virtual deadlines — including a wall-clock-jump
 simulation proving deadline math ignores `now()`.
 
+## Public API
+
+| Export | Kind | Purpose |
+| --- | --- | --- |
+| `connect()` | function | Resolve DNS and establish a TCP transport |
+| `resolveHost()` | function | Resolve a host to an address (injectable lookup) |
+| `TcpTransport` | class | Concrete `Transport` implementation |
+| `Transport` | interface | Public contract higher layers depend on (extends `EventProvider`) |
+| `TransportOptions` | interface | Options for `connect()` (timeouts, IPv6, DNS, no-delay, events, clock) |
+| `TransportState` | discriminated union | `connecting \| open \| closing \| closed` |
+| `CloseReason` | discriminated union | Why a transport closed (`client_close`, `remote_close`, `error`, `timeout`) |
+| `ResolvedAddress` | interface | Address family + IP returned by `resolveHost()` |
+| `TransportError` | class | Base typed error (with `details` and `cause`) |
+| `ConnectTimeoutError` | class | Connection timed out |
+| `DnsResolutionError` | class | DNS lookup failed |
+| `IdleTimeoutError` | class | No data flowed within the idle timeout |
+| `ReadTimeoutError` | class | A `read()` saw no data within the per-read timeout |
+| `systemClock` | const | Default `Clock` — platform globals (`Date.now`, `performance.now`, `setTimeout`) |
+| `Clock` / `TimerHandle` | interface / type | Canonical time contract re-exported from `@browsercore/contracts` |
+
+
 ## Package Dependencies
 
 ```
@@ -148,27 +169,6 @@ Every higher networking layer communicates with the network exclusively through 
 ## Documentation
 
 Full API documentation (generated from TSDoc annotations): [docs/README.md](docs/README.md)
-
-## Public API
-
-| Export | Kind | Purpose |
-| --- | --- | --- |
-| `connect()` | function | Resolve DNS and establish a TCP transport |
-| `resolveHost()` | function | Resolve a host to an address (injectable lookup) |
-| `TcpTransport` | class | Concrete `Transport` implementation |
-| `Transport` | interface | Public contract higher layers depend on (extends `EventProvider`) |
-| `TransportOptions` | interface | Options for `connect()` (timeouts, IPv6, DNS, no-delay, events, clock) |
-| `TransportState` | discriminated union | `connecting \| open \| closing \| closed` |
-| `CloseReason` | discriminated union | Why a transport closed (`client_close`, `remote_close`, `error`, `timeout`) |
-| `ResolvedAddress` | interface | Address family + IP returned by `resolveHost()` |
-| `TransportError` | class | Base typed error (with `details` and `cause`) |
-| `ConnectTimeoutError` | class | Connection timed out |
-| `DnsResolutionError` | class | DNS lookup failed |
-| `IdleTimeoutError` | class | No data flowed within the idle timeout |
-| `ReadTimeoutError` | class | A `read()` saw no data within the per-read timeout |
-| `systemClock` | const | Default `Clock` — platform globals (`Date.now`, `performance.now`, `setTimeout`) |
-| `Clock` / `TimerHandle` | interface / type | Canonical time contract re-exported from `@browsercore/contracts` |
-
 
 ## Contributing
 
